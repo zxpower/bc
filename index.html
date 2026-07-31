@@ -86,11 +86,11 @@
 
   <label>Elevation — bullet drop</label>
   <div class="row">
-    <div><input id="drop" type="number" inputmode="decimal" value="1.3" min="0" step="0.1"></div>
+    <div><input id="drop" type="number" inputmode="decimal" value="40" min="0" step="0.1"></div>
     <div class="toggle" style="flex:0 0 210px">
       <button id="moaBtn" onclick="setUnit('elev','MOA')">MOA</button>
-      <button id="mradBtn" class="active" onclick="setUnit('elev','MRAD')">MRAD</button>
-      <button id="cmBtn" onclick="setUnit('elev','CM')">cm</button>
+      <button id="mradBtn" onclick="setUnit('elev','MRAD')">MRAD</button>
+      <button id="cmBtn" class="active" onclick="setUnit('elev','CM')">cm</button>
     </div>
   </div>
 
@@ -106,8 +106,8 @@
     <div><input id="wind" type="number" inputmode="decimal" value="0" min="0" step="0.1"></div>
     <div class="toggle" style="flex:0 0 210px">
       <button id="wmoaBtn" onclick="setUnit('wind','MOA')">MOA</button>
-      <button id="wmradBtn" class="active" onclick="setUnit('wind','MRAD')">MRAD</button>
-      <button id="wcmBtn" onclick="setUnit('wind','CM')">cm</button>
+      <button id="wmradBtn" onclick="setUnit('wind','MRAD')">MRAD</button>
+      <button id="wcmBtn" class="active" onclick="setUnit('wind','CM')">cm</button>
     </div>
   </div>
   <div class="toggle" style="margin-top:8px">
@@ -138,20 +138,39 @@
 <script>
 const MOA_CM_PER_100M = 2.908882;   // 1 MOA subtends 2.908882 cm at 100 m
 const MRAD_CM_PER_100M = 10;        // 1 MRAD subtends 10 cm at 100 m
-let elevUnit = 'MRAD';
-let windUnit = 'MRAD';
+let elevUnit = 'CM';
+let windUnit = 'CM';
 let windDir = 'L';
 
+// cm subtended at `dist` per 1 unit
+function unitCm(unit, dist) {
+  const factor = dist / 100;
+  if (unit === 'MOA') return MOA_CM_PER_100M * factor;
+  if (unit === 'MRAD') return MRAD_CM_PER_100M * factor;
+  return 1; // CM
+}
+
+// Convert a value from one unit to another, preserving the real offset at `dist`.
+function convertValue(val, fromUnit, toUnit, dist) {
+  if (!(val >= 0) || fromUnit === toUnit) return val;
+  if (!(dist > 0)) return val; // can't convert angular<->cm without distance
+  const cm = val * unitCm(fromUnit, dist);
+  const out = cm / unitCm(toUnit, dist);
+  return Math.round(out * 100) / 100;
+}
+
 function setUnit(which, u) {
-  const ELEV_DEFAULTS = { MOA: '4.6', MRAD: '1.3', CM: '40' };
+  const dist = parseFloat(distance.value);
   if (which === 'elev') {
-    // Swap in the typical default for the newly selected angular unit.
-    if (ELEV_DEFAULTS[u]) drop.value = ELEV_DEFAULTS[u];
+    const v = convertValue(parseFloat(drop.value), elevUnit, u, dist);
+    if (!isNaN(v)) drop.value = v;
     elevUnit = u;
     moaBtn.classList.toggle('active', u === 'MOA');
     mradBtn.classList.toggle('active', u === 'MRAD');
     cmBtn.classList.toggle('active', u === 'CM');
   } else {
+    const v = convertValue(parseFloat(wind.value), windUnit, u, dist);
+    if (!isNaN(v)) wind.value = v;
     windUnit = u;
     wmoaBtn.classList.toggle('active', u === 'MOA');
     wmradBtn.classList.toggle('active', u === 'MRAD');

@@ -22,9 +22,12 @@
     color: var(--text);
     min-height: 100vh;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
     padding: 20px;
+  }
+  @media (min-height: 760px) {
+    body { align-items: center; }
   }
   .card {
     background: var(--card);
@@ -63,6 +66,7 @@
     background: linear-gradient(135deg, rgba(78,161,255,.12), rgba(56,211,159,.12));
     border: 1px solid var(--border); text-align: center;
   }
+  .rlabel { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 8px; }
   .clicks { font-size: 46px; font-weight: 800; color: var(--accent2); line-height: 1; }
   .clicks span { font-size: 18px; color: var(--muted); font-weight: 600; }
   .breakdown { margin-top: 10px; font-size: 14px; color: var(--muted); }
@@ -80,19 +84,40 @@
   <label>Distance (m)</label>
   <input id="distance" type="number" inputmode="decimal" value="300" min="0" step="1">
 
-  <label>Bullet drop</label>
+  <label>Elevation — bullet drop</label>
   <div class="row">
     <div><input id="drop" type="number" inputmode="decimal" value="4.6" min="0" step="0.1"></div>
     <div class="toggle" style="flex:0 0 150px">
-      <button id="moaBtn" class="active" onclick="setUnit('MOA')">MOA</button>
-      <button id="mradBtn" onclick="setUnit('MRAD')">MRAD</button>
+      <button id="moaBtn" onclick="setUnit('elev','MOA')">MOA</button>
+      <button id="mradBtn" class="active" onclick="setUnit('elev','MRAD')">MRAD</button>
     </div>
   </div>
 
   <div class="result">
+    <div class="rlabel">Elevation (dial UP)</div>
     <div class="clicks" id="clicksOut">–</div>
     <div class="breakdown" id="breakdown"></div>
     <div class="detail" id="detail"></div>
+  </div>
+
+  <label>Windage — drift</label>
+  <div class="row">
+    <div><input id="wind" type="number" inputmode="decimal" value="0" min="0" step="0.1"></div>
+    <div class="toggle" style="flex:0 0 150px">
+      <button id="wmoaBtn" onclick="setUnit('wind','MOA')">MOA</button>
+      <button id="wmradBtn" class="active" onclick="setUnit('wind','MRAD')">MRAD</button>
+    </div>
+  </div>
+  <div class="toggle" style="margin-top:8px">
+    <button id="leftBtn" class="active" onclick="setWindDir('L')">◀ Left</button>
+    <button id="rightBtn" onclick="setWindDir('R')">Right ▶</button>
+  </div>
+
+  <div class="result">
+    <div class="rlabel" id="windDirLabel">Windage (dial LEFT)</div>
+    <div class="clicks" id="wClicksOut">–</div>
+    <div class="breakdown" id="wBreakdown"></div>
+    <div class="detail" id="wDetail"></div>
   </div>
 
   <details>
@@ -109,46 +134,70 @@
 <script>
 const MOA_CM_PER_100M = 2.908882;   // 1 MOA subtends 2.908882 cm at 100 m
 const MRAD_CM_PER_100M = 10;        // 1 MRAD subtends 10 cm at 100 m
-let unit = 'MOA';
+let elevUnit = 'MRAD';
+let windUnit = 'MRAD';
+let windDir = 'L';
 
-function setUnit(u) {
-  unit = u;
-  moaBtn.classList.toggle('active', u === 'MOA');
-  mradBtn.classList.toggle('active', u === 'MRAD');
+function setUnit(which, u) {
+  if (which === 'elev') {
+    elevUnit = u;
+    moaBtn.classList.toggle('active', u === 'MOA');
+    mradBtn.classList.toggle('active', u === 'MRAD');
+  } else {
+    windUnit = u;
+    wmoaBtn.classList.toggle('active', u === 'MOA');
+    wmradBtn.classList.toggle('active', u === 'MRAD');
+  }
   calc();
+}
+
+function setWindDir(d) {
+  windDir = d;
+  leftBtn.classList.toggle('active', d === 'L');
+  rightBtn.classList.toggle('active', d === 'R');
+  calc();
+}
+
+// Returns {clicks, rawClicks, offsetCm, clickCmAtDist} or null if invalid.
+function solve(angVal, unit, dist, clickVal) {
+  if (!(dist > 0) || !(angVal >= 0) || !(clickVal > 0)) return null;
+  const factor = dist / 100;
+  const offsetCm = angVal * (unit === 'MOA' ? MOA_CM_PER_100M : MRAD_CM_PER_100M) * factor;
+  const clickCmAtDist = clickVal * factor;
+  const rawClicks = offsetCm / clickCmAtDist;
+  return { clicks: Math.round(rawClicks), rawClicks, offsetCm, clickCmAtDist };
+}
+
+function render(r, dist, perMark, labelWord, outEl, breakdownEl, detailEl) {
+  if (!r) {
+    outEl.textContent = '–';
+    breakdownEl.textContent = '';
+    detailEl.textContent = '';
+    return;
+  }
+  outEl.innerHTML = r.clicks + ' <span>clicks</span>';
+  if (perMark > 1) {
+    const marks = Math.floor(r.clicks / perMark);
+    const rem = r.clicks % perMark;
+    breakdownEl.textContent = `${marks} mark${marks !== 1 ? 's' : ''} + ${rem} click${rem !== 1 ? 's' : ''}`;
+  } else {
+    breakdownEl.textContent = '';
+  }
+  detailEl.textContent =
+    `${labelWord} = ${r.offsetCm.toFixed(2)} cm · 1 click = ${r.clickCmAtDist.toFixed(3)} cm @ ${dist} m · raw ${r.rawClicks.toFixed(2)}`;
 }
 
 function calc() {
   const dist = parseFloat(distance.value);
-  const dropVal = parseFloat(drop.value);
   const clickVal = parseFloat(clickCm.value);
   const perMark = parseInt(clicksPerMark.value, 10);
 
-  if (!(dist > 0) || !(dropVal >= 0) || !(clickVal > 0)) {
-    clicksOut.textContent = '–';
-    breakdown.textContent = '';
-    detail.textContent = '';
-    return;
-  }
+  render(solve(parseFloat(drop.value), elevUnit, dist, clickVal),
+    dist, perMark, 'Drop', clicksOut, breakdown, detail);
 
-  const factor = dist / 100;
-  const dropCm = dropVal * (unit === 'MOA' ? MOA_CM_PER_100M : MRAD_CM_PER_100M) * factor;
-  const clickCmAtDist = clickVal * factor;
-  const rawClicks = dropCm / clickCmAtDist;
-  const clicks = Math.round(rawClicks);
-
-  clicksOut.innerHTML = clicks + ' <span>clicks</span>';
-
-  if (perMark > 1) {
-    const marks = Math.floor(clicks / perMark);
-    const rem = clicks % perMark;
-    breakdown.textContent = `${marks} mark${marks !== 1 ? 's' : ''} + ${rem} click${rem !== 1 ? 's' : ''}`;
-  } else {
-    breakdown.textContent = '';
-  }
-
-  detail.textContent =
-    `Drop = ${dropCm.toFixed(2)} cm · 1 click = ${clickCmAtDist.toFixed(3)} cm @ ${dist} m · raw ${rawClicks.toFixed(2)}`;
+  windDirLabel.textContent = `Windage (dial ${windDir === 'L' ? 'LEFT' : 'RIGHT'})`;
+  render(solve(parseFloat(wind.value), windUnit, dist, clickVal),
+    dist, perMark, 'Drift', wClicksOut, wBreakdown, wDetail);
 }
 
 document.querySelectorAll('input').forEach(el => el.addEventListener('input', calc));

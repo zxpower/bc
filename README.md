@@ -1,8 +1,9 @@
 # Simple Web Ballistic Calculator
 
 Ballistic calculator to match Schmidt & Bender PMII-2 scope turrets.
-Enter your **distance** and **bullet drop** (in MOA or MRAD) and it tells you
-how many turret **clicks** to dial — plus the breakdown into numbered marks.
+Enter your **distance**, **bullet drop** (elevation) and **wind drift** (windage),
+each in MOA or MRAD, and it tells you how many turret **clicks** to dial — plus
+the breakdown into numbered marks and the dial direction (UP / LEFT / RIGHT).
 
 ## How it works
 

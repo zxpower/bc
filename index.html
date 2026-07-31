@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ballistic Turret Calculator</title>
+<style>
+  :root {
+    --bg: #0e1116;
+    --card: #171c24;
+    --accent: #4ea1ff;
+    --accent2: #38d39f;
+    --text: #e6edf3;
+    --muted: #8b98a5;
+    --border: #262d38;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    width: 100%;
+    max-width: 440px;
+    box-shadow: 0 8px 30px rgba(0,0,0,.4);
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 22px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
+  input, select {
+    width: 100%;
+    padding: 12px 14px;
+    background: #0e1116;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-size: 15px;
+    outline: none;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+  .row { display: flex; gap: 10px; }
+  .row > div { flex: 1; }
+  .toggle { display: flex; gap: 8px; margin-top: 6px; }
+  .toggle button {
+    flex: 1; padding: 10px; border-radius: 10px; cursor: pointer;
+    background: #0e1116; border: 1px solid var(--border); color: var(--muted);
+    font-size: 14px; font-weight: 600;
+  }
+  .toggle button.active { background: var(--accent); border-color: var(--accent); color: #04121f; }
+  .result {
+    margin-top: 24px; padding: 20px; border-radius: 12px;
+    background: linear-gradient(135deg, rgba(78,161,255,.12), rgba(56,211,159,.12));
+    border: 1px solid var(--border); text-align: center;
+  }
+  .clicks { font-size: 46px; font-weight: 800; color: var(--accent2); line-height: 1; }
+  .clicks span { font-size: 18px; color: var(--muted); font-weight: 600; }
+  .breakdown { margin-top: 10px; font-size: 14px; color: var(--muted); }
+  .detail { margin-top: 8px; font-size: 12px; color: var(--muted); }
+  details { margin-top: 20px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  .advanced { margin-top: 14px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Ballistic Turret Calculator</h1>
+  <div class="sub">How many clicks to dial for a given drop &amp; distance.</div>
+
+  <label>Distance (m)</label>
+  <input id="distance" type="number" inputmode="decimal" value="300" min="0" step="1">
+
+  <label>Bullet drop</label>
+  <div class="row">
+    <div><input id="drop" type="number" inputmode="decimal" value="4.6" min="0" step="0.1"></div>
+    <div class="toggle" style="flex:0 0 150px">
+      <button id="moaBtn" class="active" onclick="setUnit('MOA')">MOA</button>
+      <button id="mradBtn" onclick="setUnit('MRAD')">MRAD</button>
+    </div>
+  </div>
+
+  <div class="result">
+    <div class="clicks" id="clicksOut">–</div>
+    <div class="breakdown" id="breakdown"></div>
+    <div class="detail" id="detail"></div>
+  </div>
+
+  <details>
+    <summary>Turret settings</summary>
+    <div class="advanced">
+      <label>Click value (cm per 100 m)</label>
+      <input id="clickCm" type="number" inputmode="decimal" value="0.25" min="0.01" step="0.01">
+      <label>Clicks per numbered mark</label>
+      <input id="clicksPerMark" type="number" inputmode="numeric" value="4" min="1" step="1">
+    </div>
+  </details>
+</div>
+
+<script>
+const MOA_CM_PER_100M = 2.908882;   // 1 MOA subtends 2.908882 cm at 100 m
+const MRAD_CM_PER_100M = 10;        // 1 MRAD subtends 10 cm at 100 m
+let unit = 'MOA';
+
+function setUnit(u) {
+  unit = u;
+  moaBtn.classList.toggle('active', u === 'MOA');
+  mradBtn.classList.toggle('active', u === 'MRAD');
+  calc();
+}
+
+function calc() {
+  const dist = parseFloat(distance.value);
+  const dropVal = parseFloat(drop.value);
+  const clickVal = parseFloat(clickCm.value);
+  const perMark = parseInt(clicksPerMark.value, 10);
+
+  if (!(dist > 0) || !(dropVal >= 0) || !(clickVal > 0)) {
+    clicksOut.textContent = '–';
+    breakdown.textContent = '';
+    detail.textContent = '';
+    return;
+  }
+
+  const factor = dist / 100;
+  const dropCm = dropVal * (unit === 'MOA' ? MOA_CM_PER_100M : MRAD_CM_PER_100M) * factor;
+  const clickCmAtDist = clickVal * factor;
+  const rawClicks = dropCm / clickCmAtDist;
+  const clicks = Math.round(rawClicks);
+
+  clicksOut.innerHTML = clicks + ' <span>clicks</span>';
+
+  if (perMark > 1) {
+    const marks = Math.floor(clicks / perMark);
+    const rem = clicks % perMark;
+    breakdown.textContent = `${marks} mark${marks !== 1 ? 's' : ''} + ${rem} click${rem !== 1 ? 's' : ''}`;
+  } else {
+    breakdown.textContent = '';
+  }
+
+  detail.textContent =
+    `Drop = ${dropCm.toFixed(2)} cm · 1 click = ${clickCmAtDist.toFixed(3)} cm @ ${dist} m · raw ${rawClicks.toFixed(2)}`;
+}
+
+document.querySelectorAll('input').forEach(el => el.addEventListener('input', calc));
+calc();
+</script>
+</body>
+</html>

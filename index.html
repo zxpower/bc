@@ -87,9 +87,10 @@
   <label>Elevation — bullet drop</label>
   <div class="row">
     <div><input id="drop" type="number" inputmode="decimal" value="4.6" min="0" step="0.1"></div>
-    <div class="toggle" style="flex:0 0 150px">
+    <div class="toggle" style="flex:0 0 210px">
       <button id="moaBtn" onclick="setUnit('elev','MOA')">MOA</button>
       <button id="mradBtn" class="active" onclick="setUnit('elev','MRAD')">MRAD</button>
+      <button id="cmBtn" onclick="setUnit('elev','CM')">cm</button>
     </div>
   </div>
 
@@ -103,9 +104,10 @@
   <label>Windage — drift</label>
   <div class="row">
     <div><input id="wind" type="number" inputmode="decimal" value="0" min="0" step="0.1"></div>
-    <div class="toggle" style="flex:0 0 150px">
+    <div class="toggle" style="flex:0 0 210px">
       <button id="wmoaBtn" onclick="setUnit('wind','MOA')">MOA</button>
       <button id="wmradBtn" class="active" onclick="setUnit('wind','MRAD')">MRAD</button>
+      <button id="wcmBtn" onclick="setUnit('wind','CM')">cm</button>
     </div>
   </div>
   <div class="toggle" style="margin-top:8px">
@@ -143,10 +145,12 @@ function setUnit(which, u) {
     elevUnit = u;
     moaBtn.classList.toggle('active', u === 'MOA');
     mradBtn.classList.toggle('active', u === 'MRAD');
+    cmBtn.classList.toggle('active', u === 'CM');
   } else {
     windUnit = u;
     wmoaBtn.classList.toggle('active', u === 'MOA');
     wmradBtn.classList.toggle('active', u === 'MRAD');
+    wcmBtn.classList.toggle('active', u === 'CM');
   }
   calc();
 }
@@ -162,7 +166,11 @@ function setWindDir(d) {
 function solve(angVal, unit, dist, clickVal) {
   if (!(dist > 0) || !(angVal >= 0) || !(clickVal > 0)) return null;
   const factor = dist / 100;
-  const offsetCm = angVal * (unit === 'MOA' ? MOA_CM_PER_100M : MRAD_CM_PER_100M) * factor;
+  // For CM the entered value is already the linear offset at the target;
+  // MOA/MRAD are angular and scale with distance.
+  const offsetCm = unit === 'CM'
+    ? angVal
+    : angVal * (unit === 'MOA' ? MOA_CM_PER_100M : MRAD_CM_PER_100M) * factor;
   const clickCmAtDist = clickVal * factor;
   const rawClicks = offsetCm / clickCmAtDist;
   return { clicks: Math.round(rawClicks), rawClicks, offsetCm, clickCmAtDist };

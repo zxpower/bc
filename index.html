@@ -143,7 +143,7 @@ let windUnit = 'MRAD';
 let windDir = 'L';
 
 function setUnit(which, u) {
-  const ELEV_DEFAULTS = { MOA: '4.6', MRAD: '1.3' };
+  const ELEV_DEFAULTS = { MOA: '4.6', MRAD: '1.3', CM: '40' };
   if (which === 'elev') {
     // Swap in the typical default for the newly selected angular unit.
     if (ELEV_DEFAULTS[u]) drop.value = ELEV_DEFAULTS[u];

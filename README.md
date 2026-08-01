@@ -46,6 +46,18 @@ aware) into the wind/drift column.
 
 > Note: this is a helper/estimator. Verify against real dope before relying on it.
 
+## Tests
+
+`test.js` extracts the app's `<script>` from `index.html` and runs 28 assertions
+against the pure functions (unit conversion, turret math, atmosphere, drag
+interpolation, Miller stability, spin drift, and trajectory-solver behaviour):
+
+```bash
+node test.js
+```
+
+CI runs these in a `test` job that gates the image build.
+
 ## Run (Docker)
 
 ```bash

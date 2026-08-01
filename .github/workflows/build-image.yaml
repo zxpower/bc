@@ -3,8 +3,28 @@ on:
   workflow_call:
 
 jobs:
+  test:
+    name: Run tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Run unit tests
+        run: node test.js
+
   build-image:
     name: Build and push Docker image
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read

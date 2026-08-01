@@ -13,6 +13,8 @@
     --text: #e6edf3;
     --muted: #8b98a5;
     --border: #262d38;
+    --warn: #f0b429;
+    --danger: #ff6b6b;
   }
   * { box-sizing: border-box; }
   body {
@@ -51,7 +53,16 @@
   th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
   td:first-child, th:first-child { text-align: left; color: var(--accent2); font-weight: 700; }
   tbody tr:hover { background: rgba(78,161,255,.06); }
-  .err { color: #ff6b6b; font-size: 13px; margin-top: 12px; }
+  .err { color: var(--danger); font-size: 13px; margin-top: 12px; }
+  .note { color: var(--warn); font-size: 13px; margin-top: 12px; }
+  .tcards { display: none; }
+  .tcard { border: 1px solid var(--border); border-radius: 10px; padding: 12px; font-size: 13px; }
+  .tcard .d { color: var(--accent2); font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+  .tcard .m { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  @media (max-width: 600px) {
+    .table-wrap table { display: none; }
+    .tcards { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+  }
   h1 { font-size: 20px; margin: 0 0 4px; }
   .sub { color: var(--muted); font-size: 13px; margin-bottom: 22px; }
   label { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
@@ -91,7 +102,7 @@
 </style>
 </head>
 <body>
-<div class="card">
+<div class="card" id="card1">
   <h1>Ballistic Turret Calculator</h1>
   <div class="sub">How many clicks to dial for a given drop &amp; distance.</div>
 
@@ -149,7 +160,7 @@
   </details>
 </div>
 
-<div class="card wide">
+<div class="card wide" id="card2">
   <h1>Full Trajectory Calculator</h1>
   <div class="sub">Point-mass solver (G1/G7 drag) — produces a drop &amp; wind table with scope adjustments.</div>
 
@@ -176,8 +187,8 @@
     <div>
       <label>BC model</label>
       <div class="toggle">
-        <button id="g1Btn" class="active" onclick="setDrag('G1')">G1</button>
-        <button id="g7Btn" onclick="setDrag('G7')">G7</button>
+        <button id="g1Btn" onclick="setDrag('G1')">G1</button>
+        <button id="g7Btn" class="active" onclick="setDrag('G7')">G7</button>
       </div>
     </div>
   </div>
@@ -265,16 +276,69 @@
 
   <button class="primary" onclick="runTrajectory()">Calculate trajectory</button>
   <div class="err" id="tErr"></div>
+  <div class="note" id="tNote"></div>
   <div class="detail" id="tStability" style="margin-top:14px;text-align:center"></div>
   <div class="table-wrap" id="tTableWrap"></div>
+  <div class="tcards" id="tCards"></div>
 </div>
 
 <script>
+'use strict';
+const $ = id => document.getElementById(id);
+
 const MOA_CM_PER_100M = 2.908882;   // 1 MOA subtends 2.908882 cm at 100 m
 const MRAD_CM_PER_100M = 10;        // 1 MRAD subtends 10 cm at 100 m
+
+/* ---------------- App state (persisted) ---------------- */
 let elevUnit = 'CM';
 let windUnit = 'CM';
 let windDir = 'L';
+let dragModel = 'G7';    // matches default BC 0.243 (175gr SMK, G7)
+let twistDir = 'R';
+let trajUnit = 'MRAD';
+
+const STATE_KEY = 'bc-state-v1';
+
+function saveState() {
+  const s = { elevUnit, windUnit, windDir, dragModel, twistDir, trajUnit, inputs: {} };
+  document.querySelectorAll('input').forEach(el => { if (el.id) s.inputs[el.id] = el.value; });
+  try { localStorage.setItem(STATE_KEY, JSON.stringify(s)); } catch (e) { /* private mode */ }
+}
+
+function loadState() {
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem(STATE_KEY) || 'null'); } catch (e) { return; }
+  if (!s) return;
+  Object.entries(s.inputs || {}).forEach(([id, v]) => {
+    const el = $(id);
+    if (el && v !== '' && v != null) el.value = v;
+  });
+  elevUnit = s.elevUnit || elevUnit;
+  windUnit = s.windUnit || windUnit;
+  windDir = s.windDir || windDir;
+  dragModel = s.dragModel || dragModel;
+  twistDir = s.twistDir || twistDir;
+  trajUnit = s.trajUnit || trajUnit;
+}
+
+function syncToggles() {
+  $('moaBtn').classList.toggle('active', elevUnit === 'MOA');
+  $('mradBtn').classList.toggle('active', elevUnit === 'MRAD');
+  $('cmBtn').classList.toggle('active', elevUnit === 'CM');
+  $('wmoaBtn').classList.toggle('active', windUnit === 'MOA');
+  $('wmradBtn').classList.toggle('active', windUnit === 'MRAD');
+  $('wcmBtn').classList.toggle('active', windUnit === 'CM');
+  $('leftBtn').classList.toggle('active', windDir === 'L');
+  $('rightBtn').classList.toggle('active', windDir === 'R');
+  $('g1Btn').classList.toggle('active', dragModel === 'G1');
+  $('g7Btn').classList.toggle('active', dragModel === 'G7');
+  $('twRBtn').classList.toggle('active', twistDir === 'R');
+  $('twLBtn').classList.toggle('active', twistDir === 'L');
+  $('tuMradBtn').classList.toggle('active', trajUnit === 'MRAD');
+  $('tuMoaBtn').classList.toggle('active', trajUnit === 'MOA');
+}
+
+/* ---------------- Card 1: turret click calculator ---------------- */
 
 // cm subtended at `dist` per 1 unit
 function unitCm(unit, dist) {
@@ -289,49 +353,50 @@ function convertValue(val, fromUnit, toUnit, dist) {
   if (!(val >= 0) || fromUnit === toUnit) return val;
   if (!(dist > 0)) return val; // can't convert angular<->cm without distance
   const cm = val * unitCm(fromUnit, dist);
-  const out = cm / unitCm(toUnit, dist);
-  return Math.round(out * 100) / 100;
+  return Math.round(cm / unitCm(toUnit, dist) * 100) / 100;
 }
 
 function setUnit(which, u) {
-  const dist = parseFloat(distance.value);
+  const dist = parseFloat($('distance').value);
   if (which === 'elev') {
-    const v = convertValue(parseFloat(drop.value), elevUnit, u, dist);
-    if (!isNaN(v)) drop.value = v;
+    const v = convertValue(parseFloat($('drop').value), elevUnit, u, dist);
+    if (!isNaN(v)) $('drop').value = v;
     elevUnit = u;
-    moaBtn.classList.toggle('active', u === 'MOA');
-    mradBtn.classList.toggle('active', u === 'MRAD');
-    cmBtn.classList.toggle('active', u === 'CM');
   } else {
-    const v = convertValue(parseFloat(wind.value), windUnit, u, dist);
-    if (!isNaN(v)) wind.value = v;
+    const v = convertValue(parseFloat($('wind').value), windUnit, u, dist);
+    if (!isNaN(v)) $('wind').value = v;
     windUnit = u;
-    wmoaBtn.classList.toggle('active', u === 'MOA');
-    wmradBtn.classList.toggle('active', u === 'MRAD');
-    wcmBtn.classList.toggle('active', u === 'CM');
   }
+  syncToggles();
   calc();
+  saveState();
 }
 
 function setWindDir(d) {
   windDir = d;
-  leftBtn.classList.toggle('active', d === 'L');
-  rightBtn.classList.toggle('active', d === 'R');
+  syncToggles();
   calc();
+  saveState();
 }
 
 // Returns {clicks, rawClicks, offsetCm, clickCmAtDist} or null if invalid.
 function solve(angVal, unit, dist, clickVal) {
   if (!(dist > 0) || !(angVal >= 0) || !(clickVal > 0)) return null;
-  const factor = dist / 100;
-  // For CM the entered value is already the linear offset at the target;
-  // MOA/MRAD are angular and scale with distance.
-  const offsetCm = unit === 'CM'
-    ? angVal
-    : angVal * (unit === 'MOA' ? MOA_CM_PER_100M : MRAD_CM_PER_100M) * factor;
-  const clickCmAtDist = clickVal * factor;
+  const offsetCm = angVal * unitCm(unit, dist);
+  const clickCmAtDist = clickVal * dist / 100;
   const rawClicks = offsetCm / clickCmAtDist;
   return { clicks: Math.round(rawClicks), rawClicks, offsetCm, clickCmAtDist };
+}
+
+// Break a click count into turns / marks / remaining clicks.
+function breakdownClicks(clicks, perMark, perTurn) {
+  if (!(perMark > 1)) return null;
+  const totalMarks = Math.floor(clicks / perMark);
+  const rem = clicks % perMark;
+  if (perTurn > 1) {
+    return { turns: Math.floor(totalMarks / perTurn), mark: totalMarks % perTurn, rem };
+  }
+  return { turns: 0, mark: totalMarks, rem };
 }
 
 function render(r, dist, perMark, perTurn, labelWord, outEl, breakdownEl, detailEl) {
@@ -342,22 +407,13 @@ function render(r, dist, perMark, perTurn, labelWord, outEl, breakdownEl, detail
     return;
   }
   outEl.innerHTML = r.clicks + ' <span>clicks</span>';
-  if (perMark > 1) {
-    const totalMarks = Math.floor(r.clicks / perMark);
-    const rem = r.clicks % perMark;
-    let text;
-    if (perTurn > 1) {
-      const turns = Math.floor(totalMarks / perTurn);
-      const mark = totalMarks % perTurn;
-      const parts = [];
-      if (turns > 0) parts.push(`${turns} turn${turns !== 1 ? 's' : ''}`);
-      parts.push(`mark ${mark}`);
-      parts.push(`+ ${rem} click${rem !== 1 ? 's' : ''}`);
-      text = parts.join(' · ');
-    } else {
-      text = `${totalMarks} mark${totalMarks !== 1 ? 's' : ''} + ${rem} click${rem !== 1 ? 's' : ''}`;
-    }
-    breakdownEl.textContent = text;
+  const b = breakdownClicks(r.clicks, perMark, perTurn);
+  if (b) {
+    const parts = [];
+    if (b.turns > 0) parts.push(`${b.turns} turn${b.turns !== 1 ? 's' : ''}`);
+    parts.push(`mark ${b.mark}`);
+    parts.push(`+ ${b.rem} click${b.rem !== 1 ? 's' : ''}`);
+    breakdownEl.textContent = parts.join(' · ');
   } else {
     breakdownEl.textContent = '';
   }
@@ -366,21 +422,18 @@ function render(r, dist, perMark, perTurn, labelWord, outEl, breakdownEl, detail
 }
 
 function calc() {
-  const dist = parseFloat(distance.value);
-  const clickVal = parseFloat(clickCm.value);
-  const perMark = parseInt(clicksPerMark.value, 10);
-  const perTurn = parseInt(marksPerTurn.value, 10);
+  const dist = parseFloat($('distance').value);
+  const clickVal = parseFloat($('clickCm').value);
+  const perMark = parseInt($('clicksPerMark').value, 10);
+  const perTurn = parseInt($('marksPerTurn').value, 10);
 
-  render(solve(parseFloat(drop.value), elevUnit, dist, clickVal),
-    dist, perMark, perTurn, 'Drop', clicksOut, breakdown, detail);
+  render(solve(parseFloat($('drop').value), elevUnit, dist, clickVal),
+    dist, perMark, perTurn, 'Drop', $('clicksOut'), $('breakdown'), $('detail'));
 
-  windDirLabel.textContent = `Windage (dial ${windDir === 'L' ? 'LEFT' : 'RIGHT'})`;
-  render(solve(parseFloat(wind.value), windUnit, dist, clickVal),
-    dist, perMark, perTurn, 'Drift', wClicksOut, wBreakdown, wDetail);
+  $('windDirLabel').textContent = `Windage (dial ${windDir === 'L' ? 'LEFT' : 'RIGHT'})`;
+  render(solve(parseFloat($('wind').value), windUnit, dist, clickVal),
+    dist, perMark, perTurn, 'Drift', $('wClicksOut'), $('wBreakdown'), $('wDetail'));
 }
-
-document.querySelectorAll('input').forEach(el => el.addEventListener('input', calc));
-calc();
 
 /* ---------------- Full trajectory solver ---------------- */
 
@@ -388,15 +441,15 @@ calc();
 const DRAG_G1 = [
   [0.00,0.2629],[0.05,0.2558],[0.10,0.2487],[0.15,0.2413],[0.20,0.2344],[0.25,0.2278],
   [0.30,0.2214],[0.35,0.2155],[0.40,0.2104],[0.45,0.2061],[0.50,0.2032],[0.55,0.2020],
-  [0.60,0.2034],[0.70,0.2165],[0.725,0.2230],[0.75,0.2313],[0.775,0.2417],[0.80,0.2546],
-  [0.825,0.2706],[0.85,0.2901],[0.875,0.3136],[0.90,0.3415],[0.925,0.3734],[0.95,0.4084],
-  [0.975,0.4448],[1.0,0.4805],[1.025,0.5136],[1.05,0.5427],[1.075,0.5677],[1.10,0.5883],
-  [1.125,0.6053],[1.15,0.6191],[1.20,0.6393],[1.25,0.6518],[1.30,0.6589],[1.35,0.6621],
-  [1.40,0.6625],[1.45,0.6607],[1.50,0.6573],[1.55,0.6528],[1.60,0.6474],[1.65,0.6413],
-  [1.70,0.6347],[1.75,0.6280],[1.80,0.6210],[1.85,0.6141],[1.90,0.6072],[1.95,0.6003],
-  [2.00,0.5934],[2.10,0.5798],[2.20,0.5665],[2.30,0.5535],[2.40,0.5407],[2.50,0.5283],
-  [2.60,0.5164],[2.70,0.5050],[2.80,0.4941],[2.90,0.4837],[3.00,0.4739],[3.50,0.4351],
-  [4.00,0.4109],[4.50,0.3946],[5.00,0.3828]
+  [0.60,0.2034],[0.65,0.2074],[0.70,0.2165],[0.725,0.2230],[0.75,0.2313],[0.775,0.2417],
+  [0.80,0.2546],[0.825,0.2706],[0.85,0.2901],[0.875,0.3136],[0.90,0.3415],[0.925,0.3734],
+  [0.95,0.4084],[0.975,0.4448],[1.0,0.4805],[1.025,0.5136],[1.05,0.5427],[1.075,0.5677],
+  [1.10,0.5883],[1.125,0.6053],[1.15,0.6191],[1.20,0.6393],[1.25,0.6518],[1.30,0.6589],
+  [1.35,0.6621],[1.40,0.6625],[1.45,0.6607],[1.50,0.6573],[1.55,0.6528],[1.60,0.6474],
+  [1.65,0.6413],[1.70,0.6347],[1.75,0.6280],[1.80,0.6210],[1.85,0.6141],[1.90,0.6072],
+  [1.95,0.6003],[2.00,0.5934],[2.10,0.5798],[2.20,0.5665],[2.30,0.5535],[2.40,0.5407],
+  [2.50,0.5283],[2.60,0.5164],[2.70,0.5050],[2.80,0.4941],[2.90,0.4837],[3.00,0.4739],
+  [3.50,0.4351],[4.00,0.4109],[4.50,0.3946],[5.00,0.3828]
 ];
 const DRAG_G7 = [
   [0.00,0.1198],[0.05,0.1197],[0.10,0.1196],[0.15,0.1194],[0.20,0.1193],[0.25,0.1194],
@@ -411,25 +464,10 @@ const DRAG_G7 = [
   [2.60,0.2632],[2.70,0.2578],[2.80,0.2526],[2.90,0.2478],[3.00,0.2434],[3.50,0.2255],
   [4.00,0.2141],[4.50,0.2065],[5.00,0.2003]
 ];
-let dragModel = 'G1';
-let twistDir = 'R';
-let trajUnit = 'MRAD';
 
-function setDrag(m) {
-  dragModel = m;
-  g1Btn.classList.toggle('active', m === 'G1');
-  g7Btn.classList.toggle('active', m === 'G7');
-}
-function setTwist(d) {
-  twistDir = d;
-  twRBtn.classList.toggle('active', d === 'R');
-  twLBtn.classList.toggle('active', d === 'L');
-}
-function setTrajUnit(u) {
-  trajUnit = u;
-  tuMradBtn.classList.toggle('active', u === 'MRAD');
-  tuMoaBtn.classList.toggle('active', u === 'MOA');
-}
+function setDrag(m) { dragModel = m; syncToggles(); saveState(); refreshTable(); }
+function setTwist(d) { twistDir = d; syncToggles(); saveState(); refreshTable(); }
+function setTrajUnit(u) { trajUnit = u; syncToggles(); saveState(); refreshTable(); }
 
 // Miller gyroscopic stability factor (Sg), corrected for velocity & atmosphere.
 function millerSg(grains, dIn, lenIn, twistIn, mvFps, tempF, pressInHg) {
@@ -437,7 +475,7 @@ function millerSg(grains, dIn, lenIn, twistIn, mvFps, tempF, pressInHg) {
   const t = twistIn / dIn;          // twist in calibers
   const l = lenIn / dIn;            // length in calibers
   let sg = 30 * grains / (t * t * Math.pow(dIn, 3) * l * (1 + l * l));
-  sg *= Math.pow(mvFps / 2800, 1 / 3);                 // velocity correction
+  sg *= Math.pow(mvFps / 2800, 1 / 3);                  // velocity correction
   sg *= ((tempF + 460) / 519) * (29.92 / pressInHg);    // atmosphere correction
   return sg;
 }
@@ -468,45 +506,44 @@ function airDensity(tempC, pressHpa, humPct) {
   const P = pressHpa * 100;                       // Pa
   const Psat = 610.78 * Math.exp(17.27 * tempC / (tempC + 237.3));
   const Pv = (humPct / 100) * Psat;
-  const Pd = P - Pv;
-  return Pd / (287.058 * T) + Pv / (461.495 * T);
+  return (P - Pv) / (287.058 * T) + Pv / (461.495 * T);
 }
 
 const GRAIN_TO_KG = 0.0000647989;
 const G = 9.80665;
 
-// Simulate to a max range, return sampled points. Uses RK-ish Euler with small dt.
+function accel(vx, vy, vz, p) {
+  const rvx = vx - p.windX, rvy = vy, rvz = vz - p.windZ;
+  const vrel = Math.sqrt(rvx * rvx + rvy * rvy + rvz * rvz);
+  const d = p.k * interpCd(p.table, vrel / p.sound) * vrel;
+  return [-d * rvx, -d * rvy - G, -d * rvz];
+}
+
+// Heun (RK2) point-mass integrator.
 // launchAngle (rad) is super-elevation of the bore above the line of sight.
+// Sight line is y=0; bore starts sight-height below it.
 function simulate(p, launchAngle, sampleAt) {
-  const dt = 0.0005;
-  const a0 = p.sound;
-  // BC in kg/m^2 (SI): imperial lb/in^2 -> * 703.0
-  const bcSI = p.bc * 703.0;
-  const k = Math.PI / 8 * p.rho / bcSI;           // decel = k * Cd * |vrel| * vrel
-  // Start at bore, sight-line is y=0, bore is sight height below it.
+  const dt = 0.002;
+  p.k = Math.PI / 8 * p.rho / (p.bc * 703.0);  // BC lb/in^2 -> kg/m^2 is *703.0
   let x = 0, y = -p.sightH, z = 0;
   let vx = p.mv * Math.cos(launchAngle);
   let vy = p.mv * Math.sin(launchAngle);
-  let vz = 0;
-  let t = 0;
+  let vz = 0, t = 0;
   const out = [];
   let si = 0;
-  let px = x, py = y, pz = z, pvx = vx, pt = t;
-  const maxRange = sampleAt[sampleAt.length - 1] + 1;
-  while (x <= maxRange && t < 30) {
-    // relative velocity (subtract wind)
-    const rvx = vx - p.windX, rvy = vy, rvz = vz - p.windZ;
-    const vrel = Math.sqrt(rvx * rvx + rvy * rvy + rvz * rvz);
-    const mach = vrel / a0;
-    const cd = interpCd(p.table, mach);
-    const decel = k * cd * vrel;
-    const ax = -decel * rvx;
-    const ay = -decel * rvy - G;
-    const az = -decel * rvz;
-    px = x; py = y; pz = z; pvx = vx; pt = t;
-    const pvy = vy, pvz = vz;
-    vx += ax * dt; vy += ay * dt; vz += az * dt;
-    x += vx * dt; y += vy * dt; z += vz * dt;
+  const maxRange = sampleAt.length ? sampleAt[sampleAt.length - 1] + 1 : -1;
+  // vx > 10 m/s: stop when the bullet has effectively stalled downrange.
+  while (x <= maxRange && t < 60 && vx > 10) {
+    const px = x, py = y, pz = z, pvx = vx, pvy = vy, pvz = vz, pt = t;
+    const a1 = accel(vx, vy, vz, p);
+    const a2 = accel(vx + a1[0] * dt, vy + a1[1] * dt, vz + a1[2] * dt, p);
+    const nvx = vx + (a1[0] + a2[0]) * dt / 2;
+    const nvy = vy + (a1[1] + a2[1]) * dt / 2;
+    const nvz = vz + (a1[2] + a2[2]) * dt / 2;
+    x += (vx + nvx) / 2 * dt;
+    y += (vy + nvy) / 2 * dt;
+    z += (vz + nvz) / 2 * dt;
+    vx = nvx; vy = nvy; vz = nvz;
     t += dt;
     while (si < sampleAt.length && x >= sampleAt[si]) {
       const f = (sampleAt[si] - px) / (x - px || 1e-9);
@@ -524,34 +561,45 @@ function simulate(p, launchAngle, sampleAt) {
 }
 
 // Find launch angle so bullet crosses line of sight (y=0) at zero distance.
+// Returns null if no solution exists in the bracket (unreachable zero).
 function findZeroAngle(p) {
-  let lo = -0.02, hi = 0.06;
-  for (let iter = 0; iter < 40; iter++) {
+  let lo = -0.05, hi = 0.25;
+  for (let iter = 0; iter < 50; iter++) {
     const mid = (lo + hi) / 2;
     const r = simulate(p, mid, [p.zero]);
-    const yz = r.length ? r[0].y : -999;
-    if (yz > 0) hi = mid; else lo = mid;
+    if (r.length && r[0].y > 0) hi = mid; else lo = mid;
   }
-  return (lo + hi) / 2;
+  const a = (lo + hi) / 2;
+  const chk = simulate(p, a, [p.zero]);
+  if (!chk.length || Math.abs(chk[0].y) > 0.005) return null;
+  return a;
 }
 
 function runTrajectory() {
-  const errEl = tErr, wrap = tTableWrap;
+  const errEl = $('tErr'), noteEl = $('tNote'), wrap = $('tTableWrap'), cardsEl = $('tCards');
+  const fail = msg => {
+    errEl.textContent = msg;
+    noteEl.textContent = '';
+    $('tStability').textContent = '';
+    wrap.innerHTML = '';
+    cardsEl.innerHTML = '';
+    delete wrap.dataset.has;
+  };
   errEl.textContent = '';
-  wrap.innerHTML = '';
-  const num = id => parseFloat(document.getElementById(id).value);
+  noteEl.textContent = '';
+  const num = id => parseFloat($(id).value);
 
   const from = num('tFrom'), to = num('tTo'), step = num('tStep');
   const bc = num('tBc'), mv = num('tMv'), weight = num('tWeight');
-  if (!(mv > 0) || !(bc > 0)) { errEl.textContent = 'Enter valid muzzle velocity and BC.'; return; }
-  if (!(step > 0) || to < from) { errEl.textContent = 'Check range from/to/step.'; return; }
+  if (!(mv > 0) || !(bc > 0)) return fail('Enter valid muzzle velocity and BC.');
+  if (!(step > 0) || to < from) return fail('Check range from/to/step.');
 
   const rho = airDensity(num('tTemp'), num('tPress'), num('tHum'));
   const sound = 331.3 * Math.sqrt(1 + num('tTemp') / 273.15);
 
   // wind: clock hour, 12 = headwind (from target), 3 = from right.
   const clock = num('tWindDir');
-  const phi = clock / 12 * 2 * Math.PI;            // from-direction bearing (0=downrange)
+  const phi = clock / 12 * 2 * Math.PI;           // from-direction bearing (0=downrange)
   const W = num('tWind');
   const windX = -W * Math.cos(phi);               // + = tailwind pushing downrange
   const windZ = -W * Math.sin(phi);               // + = pushing to +z (right)
@@ -564,66 +612,115 @@ function runTrajectory() {
     windX, windZ
   };
 
-  const angle = findZeroAngle(p);
+  // Zero is established in calm conditions; wind applies to the shot only.
+  const angle = findZeroAngle({ ...p, windX: 0, windZ: 0 });
+  if (angle == null) return fail(`Cannot zero at ${p.zero} m with this load — check BC/model/velocity.`);
 
   const samples = [];
   for (let d = from; d <= to + 1e-6; d += step) samples.push(Math.round(d));
   const rows = simulate(p, angle, samples);
 
+  if (rows.length < samples.length) {
+    const firstMissed = samples[rows.length];
+    noteEl.textContent =
+      `Ranges from ${firstMissed} m on are not reachable with this load (bullet too slow) — rows omitted.`;
+  }
+  if (!rows.length) {
+    $('tStability').textContent = '';
+    wrap.innerHTML = '';
+    cardsEl.innerHTML = '';
+    delete wrap.dataset.has;
+    return;
+  }
+
   const massKg = weight * GRAIN_TO_KG;
-  const clickCmVal = parseFloat(clickCm.value) || 0.25;
+  const clickCmVal = parseFloat($('clickCm').value) || 0.25;
+  const perMark = parseInt($('clicksPerMark').value, 10) || 1;
+  const perTurn = parseInt($('marksPerTurn').value, 10) || 1;
 
   const clicksFor = (offsetCm, dist) => {
     const clickCmAtDist = clickCmVal * dist / 100;
     return clickCmAtDist > 0 ? Math.round(offsetCm / clickCmAtDist) : 0;
   };
+  // "54 (13m+2)" or "150 (1t 1m+2)" — dialable directly on the turret.
+  const fmtClicks = n => {
+    const a = Math.abs(n);
+    const b = breakdownClicks(a, perMark, perTurn);
+    if (!b) return String(a);
+    return a + ' (' + (b.turns > 0 ? b.turns + 't ' : '') + b.mark + 'm+' + b.rem + ')';
+  };
 
   // Gyroscopic stability (Miller) from twist + bullet length.
-  const dIn = num('tCaliber') / 25.4;
-  const lenIn = num('tLength') / 25.4;
-  const twistIn = num('tTwist');
-  const tempF = num('tTemp') * 9 / 5 + 32;
-  const pressInHg = num('tPress') * 0.02953;
-  const sg = millerSg(weight, dIn, lenIn, twistIn, mv * 3.28084, tempF, pressInHg);
+  const sg = millerSg(weight, num('tCaliber') / 25.4, num('tLength') / 25.4, num('tTwist'),
+    mv * 3.28084, num('tTemp') * 9 / 5 + 32, num('tPress') * 0.02953);
 
+  const stEl = $('tStability');
   if (sg != null) {
     let msg = `Gyroscopic stability Sg = ${sg.toFixed(2)} · twist ${twistDir}-hand`;
     if (sg < 1.0) msg += ' — UNSTABLE (bullet will tumble)';
     else if (sg < 1.4) msg += ' — marginal (aim for ≥ 1.4)';
     else msg += ' — stable';
-    tStability.textContent = msg;
-    tStability.style.color = sg < 1.0 ? '#ff6b6b' : (sg < 1.4 ? '#f0b429' : 'var(--muted)');
+    stEl.textContent = msg;
+    stEl.style.color = sg < 1.0 ? 'var(--danger)' : (sg < 1.4 ? 'var(--warn)' : 'var(--muted)');
   } else {
-    tStability.textContent = 'Enter caliber, bullet length and twist for stability + spin drift.';
-    tStability.style.color = 'var(--muted)';
+    stEl.textContent = 'Enter caliber, bullet length and twist for stability + spin drift.';
+    stEl.style.color = 'var(--muted)';
   }
 
-  const uLabel = trajUnit;                          // MRAD or MOA
-  const ang = (offsetCm, dist) => dist > 0 ? offsetCm / unitCm(trajUnit, dist) : 0;
+  const uLabel = trajUnit;
+  const angOf = (offsetCm, dist) => dist > 0 ? offsetCm / unitCm(trajUnit, dist) : 0;
 
   let html = '<table><thead><tr>' +
     '<th>Dist m</th><th>Vel m/s</th><th>Energy J</th><th>ToF s</th>' +
     `<th>Drop cm</th><th>Drop ${uLabel}</th><th>Elev clk</th>` +
     `<th>Wind cm</th><th>Wind ${uLabel}</th><th>Wind clk</th>` +
     '</tr></thead><tbody>';
+  let cards = '';
 
   for (const r of rows) {
     const dist = r.dist;
-    const dropCm = -r.y * 100;                                // below LOS positive
-    const windCm = r.z * 100 + spinDriftCm(sg, r.t);         // wind + spin drift
+    const dropCm = -r.y * 100;                            // below LOS positive
+    const windCm = r.z * 100 + spinDriftCm(sg, r.t);      // wind + spin drift
     const energy = 0.5 * massKg * r.v * r.v;
-    const windSide = windCm >= 0 ? 'R' : 'L';
+    const side = windCm >= 0 ? 'R' : 'L';
+    const eClk = clicksFor(dropCm, dist);
+    const wClk = Math.abs(clicksFor(windCm, dist));
     html += '<tr>' +
       `<td>${dist}</td><td>${r.v.toFixed(0)}</td><td>${energy.toFixed(0)}</td><td>${r.t.toFixed(2)}</td>` +
-      `<td>${dropCm.toFixed(1)}</td><td>${ang(dropCm, dist).toFixed(2)}</td>` +
-      `<td>${clicksFor(dropCm, dist)}</td>` +
-      `<td>${Math.abs(windCm).toFixed(1)} ${windSide}</td><td>${Math.abs(ang(windCm, dist)).toFixed(2)}</td>` +
-      `<td>${Math.abs(clicksFor(windCm, dist))} ${windSide}</td>` +
+      `<td>${dropCm.toFixed(1)}</td><td>${angOf(dropCm, dist).toFixed(2)}</td>` +
+      `<td>${fmtClicks(eClk)}</td>` +
+      `<td>${Math.abs(windCm).toFixed(1)} ${side}</td><td>${Math.abs(angOf(windCm, dist)).toFixed(2)}</td>` +
+      `<td>${fmtClicks(wClk)} ${side}</td>` +
       '</tr>';
+    cards +=
+      `<div class="tcard"><div class="d">${dist} m</div>` +
+      `<div>Drop ${dropCm.toFixed(1)} cm · ${angOf(dropCm, dist).toFixed(2)} ${uLabel} · dial UP ${fmtClicks(eClk)}</div>` +
+      `<div>Wind ${Math.abs(windCm).toFixed(1)} cm ${side} · ${Math.abs(angOf(windCm, dist)).toFixed(2)} ${uLabel} · dial ${side === 'R' ? 'LEFT' : 'RIGHT'} ${fmtClicks(wClk)}</div>` +
+      `<div class="m">${r.v.toFixed(0)} m/s · ${energy.toFixed(0)} J · ${r.t.toFixed(2)} s</div></div>`;
   }
   html += '</tbody></table>';
   wrap.innerHTML = html;
+  cardsEl.innerHTML = cards;
+  wrap.dataset.has = '1';
 }
+
+// Re-run the trajectory automatically when settings affecting it change,
+// but only if a table is already on screen.
+function refreshTable() {
+  if ($('tTableWrap').dataset.has === '1') runTrajectory();
+}
+
+/* ---------------- Wiring ---------------- */
+document.querySelectorAll('#card1 input').forEach(el => el.addEventListener('input', () => {
+  calc();
+  saveState();
+  if (['clickCm', 'clicksPerMark', 'marksPerTurn'].includes(el.id)) refreshTable();
+}));
+document.querySelectorAll('#card2 input').forEach(el => el.addEventListener('input', saveState));
+
+loadState();
+syncToggles();
+calc();
 </script>
 </body>
 </html>

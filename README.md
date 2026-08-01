@@ -27,16 +27,22 @@ A second section computes the whole trajectory from first principles instead of 
 single known drop. It's a 3-DOF point-mass solver using the standard **G1/G7**
 drag models:
 
-- **Bullet:** caliber, weight (grains), muzzle velocity (m/s), ballistic
-  coefficient (G1 or G7)
-- **Rifle/scope:** zero distance, sight height over bore
+- **Bullet:** caliber, weight (grains), length (mm), muzzle velocity (m/s),
+  ballistic coefficient (G1 or G7)
+- **Rifle/scope:** zero distance, sight height over bore, barrel twist &
+  twist direction (drives gyroscopic stability + spin drift)
 - **Atmosphere:** temperature, pressure, humidity (used for real air density)
 - **Wind:** speed + direction as a clock hour (12 = headwind, 3 = from the right)
 - **Range:** from / to / step
 
 It auto-solves the launch angle for your zero, then prints a table with velocity,
-energy, time of flight, drop and wind drift (cm / MRAD / MOA) plus the required
-elevation and windage **clicks** (using the turret settings above).
+energy, time of flight, drop and wind drift (cm + your chosen **MRAD or MOA**)
+plus the required elevation and windage **clicks** (using the turret settings above).
+
+From twist rate and bullet length it also computes the **Miller gyroscopic
+stability factor (Sg)** — with a warning if the bullet is marginal (< 1.4) or
+unstable (< 1.0) — and folds **spin drift** (Litz approximation, right/left twist
+aware) into the wind/drift column.
 
 > Note: this is a helper/estimator. Verify against real dope before relying on it.
 

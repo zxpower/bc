@@ -70,6 +70,8 @@ Then open http://localhost:8080
 
 MIT © [Reinholds Zviedris](https://estivador.io)
 
+Source: https://github.com/zxpower/bc
+
 > Disclaimer: provided as-is for informational/educational use, with no warranty.
 > Ballistic outputs are estimates — always confirm against verified dope.
 

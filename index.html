@@ -99,6 +99,11 @@
   details { margin-top: 20px; }
   summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   .advanced { margin-top: 14px; }
+  footer { max-width: 900px; width: 100%; text-align: center; color: var(--muted); }
+  footer .disclaimer { font-size: 12px; line-height: 1.5; margin: 0 0 8px; }
+  footer .credit { font-size: 13px; margin: 0; }
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -281,6 +286,19 @@
   <div class="table-wrap" id="tTableWrap"></div>
   <div class="tcards" id="tCards"></div>
 </div>
+
+<footer>
+  <p class="disclaimer">
+    <strong>Disclaimer:</strong> this tool is provided for informational and
+    educational purposes only, with no warranty of any kind. Ballistic outputs
+    are estimates — always confirm against real, verified dope before relying on
+    them. The author accepts no liability for its use.
+  </p>
+  <p class="credit">
+    MIT Licensed · Made by
+    <a href="https://estivador.io" target="_blank" rel="noopener">Reinholds Zviedris</a>
+  </p>
+</footer>
 
 <script>
 'use strict';

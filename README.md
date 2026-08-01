@@ -21,6 +21,25 @@ divided by the turret's click value at that distance:
 
 Both the click value and clicks-per-mark are adjustable for other scopes/turrets.
 
+## Full trajectory calculator
+
+A second section computes the whole trajectory from first principles instead of a
+single known drop. It's a 3-DOF point-mass solver using the standard **G1/G7**
+drag models:
+
+- **Bullet:** caliber, weight (grains), muzzle velocity (m/s), ballistic
+  coefficient (G1 or G7)
+- **Rifle/scope:** zero distance, sight height over bore
+- **Atmosphere:** temperature, pressure, humidity (used for real air density)
+- **Wind:** speed + direction as a clock hour (12 = headwind, 3 = from the right)
+- **Range:** from / to / step
+
+It auto-solves the launch angle for your zero, then prints a table with velocity,
+energy, time of flight, drop and wind drift (cm / MRAD / MOA) plus the required
+elevation and windage **clicks** (using the turret settings above).
+
+> Note: this is a helper/estimator. Verify against real dope before relying on it.
+
 ## Run (Docker)
 
 ```bash

@@ -209,6 +209,7 @@
     <div>
       <label>Ballistic coefficient</label>
       <input id="tBc" type="number" inputmode="decimal" value="0.243" min="0.001" step="0.001">
+      <div class="detail" id="tBcHint"></div>
     </div>
     <div>
       <label>BC model</label>
@@ -522,7 +523,58 @@ const DRAG_G7 = [
   [4.00,0.2141],[4.50,0.2065],[5.00,0.2003]
 ];
 
-function setDrag(m) { dragModel = m; syncToggles(); saveState(); refreshAll(); }
+/* ---- G1 <-> G7 ballistic coefficient ----
+   A G1 and a G7 BC describe the same bullet against two different standard
+   projectiles. Equal retardation means Cd_G1(M)/BC_G1 = Cd_G7(M)/BC_G7, so
+   BC_G1 / BC_G7 = Cd_G1(M) / Cd_G7(M) — a velocity-dependent ratio we can read
+   straight off the drag tables. It is evaluated at the bullet's own Mach number,
+   clamped to the band where both tables behave: the transonic region swings the
+   ratio wildly (1.3 to 2.3) and would produce nonsense conversions. In the
+   clamped band it lands at 1.91-1.99, matching the ~1.95 measured for modern
+   boat-tails (175gr SMK: 0.475 G1 / 0.243 G7). */
+const BC_MACH_MIN = 1.5, BC_MACH_MAX = 3.0;
+
+function bcRatio(mach) {
+  const m = Math.min(BC_MACH_MAX, Math.max(BC_MACH_MIN, mach > 0 ? mach : 2));
+  return interpCd(DRAG_G1, m) / interpCd(DRAG_G7, m);
+}
+
+function convertBc(bc, from, to, mach) {
+  if (!(bc > 0) || from === to) return bc;
+  const r = bcRatio(mach);
+  return Math.round((to === 'G1' ? bc * r : bc / r) * 1000) / 1000;
+}
+
+// Muzzle Mach from the current velocity + temperature; NaN if not usable yet.
+function muzzleMach() {
+  const mv = parseFloat($('tMv').value);
+  const t = parseFloat($('tTemp').value);
+  const sound = 331.3 * Math.sqrt(1 + (isFinite(t) && t > -273 ? t : 15) / 273.15);
+  return mv > 0 ? mv / sound : NaN;
+}
+
+function updateBcHint() {
+  const bc = parseFloat($('tBc').value);
+  const other = dragModel === 'G1' ? 'G7' : 'G1';
+  const v = convertBc(bc, dragModel, other, muzzleMach());
+  $('tBcHint').textContent = v > 0 && v !== bc
+    ? `${bc} ${dragModel} ≈ ${v.toFixed(3)} ${other} for the same bullet`
+    : '';
+}
+
+// Switching model converts the BC in place, so the load stays the same bullet.
+function setDrag(m) {
+  if (m !== dragModel) {
+    const el = $('tBc');
+    const v = convertBc(parseFloat(el.value), dragModel, m, muzzleMach());
+    if (v > 0) el.value = v;
+  }
+  dragModel = m;
+  syncToggles();
+  updateBcHint();
+  saveState();
+  refreshAll();
+}
 function setTwist(d) { twistDir = d; syncToggles(); saveState(); refreshAll(); }
 function setTrajUnit(u) { trajUnit = u; syncToggles(); saveState(); refreshAll(); }
 
@@ -935,7 +987,10 @@ document.querySelectorAll('#card1 input').forEach(el => el.addEventListener('inp
   saveState();
   if (['clickCm', 'clicksPerMark', 'marksPerTurn'].includes(el.id)) refreshAll();
 }));
-document.querySelectorAll('#card2 input').forEach(el => el.addEventListener('input', saveState));
+document.querySelectorAll('#card2 input').forEach(el => el.addEventListener('input', () => {
+  saveState();
+  if (['tBc', 'tMv', 'tTemp'].includes(el.id)) updateBcHint();
+}));
 
 // Target rows are rebuilt on add/remove, so listen on the container.
 $('targetRows').addEventListener('input', e => {
@@ -955,6 +1010,7 @@ loadState();
 syncToggles();
 calc();
 renderTargetRows();
+updateBcHint();
 </script>
 </body>
 </html>

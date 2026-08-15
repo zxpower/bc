@@ -93,8 +93,17 @@ CI runs these in a `test` job that gates the image build.
 
 ## Run (Docker)
 
+With Docker Compose:
+
 ```bash
 docker compose up --build
+```
+
+Or with plain Docker:
+
+```bash
+docker build -t ballistic-calculator .
+docker run -p 8080:80 ballistic-calculator
 ```
 
 Then open http://localhost:8080
@@ -107,10 +116,3 @@ Source: https://github.com/zxpower/bc
 
 > Disclaimer: provided as-is for informational/educational use, with no warranty.
 > Ballistic outputs are estimates — always confirm against verified dope.
-
-Or with plain Docker:
-
-```bash
-docker build -t ballistic-calculator .
-docker run -p 8080:80 ballistic-calculator
-```

@@ -143,6 +143,46 @@ test('denser air = more drop', () => {
   assert(thick.y < thin.y);
 });
 
+console.log('G1 <-> G7 BC conversion:');
+const M_800 = 800 / (331.3 * Math.sqrt(1 + 15 / 273.15));   // ~2.35 Mach
+
+test('ratio is Cd_G1/Cd_G7 at the reference Mach', () =>
+  approx(bcRatio(2), interpCd(DRAG_G1, 2) / interpCd(DRAG_G7, 2), 1e-12));
+test('ratio sits in the measured 1.9-2.0 band across the supersonic range', () => {
+  for (const m of [1.5, 2, 2.35, 3]) {
+    const r = bcRatio(m);
+    assert(r > 1.9 && r < 2.0, 'Mach ' + m + ' gave ' + r.toFixed(3));
+  }
+});
+test('transonic and subsonic Machs are clamped, not trusted', () => {
+  approx(bcRatio(0.9), bcRatio(BC_MACH_MIN), 1e-12);
+  approx(bcRatio(9), bcRatio(BC_MACH_MAX), 1e-12);
+  approx(bcRatio(NaN), bcRatio(2), 1e-12);   // no velocity yet -> Mach 2
+});
+test('175gr SMK 0.243 G7 converts near its published 0.475 G1', () => {
+  approx(convertBc(0.243, 'G7', 'G1', M_800), 0.475, 0.01);
+});
+test('conversion round-trips', () => {
+  const g1 = convertBc(0.243, 'G7', 'G1', M_800);
+  approx(convertBc(g1, 'G1', 'G7', M_800), 0.243, 0.0005);
+});
+test('G1 BC is always the larger number', () =>
+  assert(convertBc(0.3, 'G7', 'G1', M_800) > 0.3 && convertBc(0.3, 'G1', 'G7', M_800) < 0.3));
+test('same model or bad input is left untouched', () => {
+  assert.strictEqual(convertBc(0.243, 'G7', 'G7', M_800), 0.243);
+  assert.strictEqual(convertBc(0, 'G7', 'G1', M_800), 0);
+  assert(isNaN(convertBc(NaN, 'G7', 'G1', M_800)));
+});
+test('converted BC keeps the trajectory the same bullet', () => {
+  const a1 = findZeroAngle({ ...P });
+  const g1bc = convertBc(0.243, 'G7', 'G1', M_800);
+  const Q = { ...P, bc: g1bc, table: DRAG_G1 };
+  const asG7 = simulate({ ...P }, a1, [600])[0];
+  const asG1 = simulate(Q, findZeroAngle(Q), [600])[0];
+  // Different drag curves, so not identical — but within a few cm at 600 m.
+  approx(asG1.y * 100, asG7.y * 100, 8, 'drop cm at 600 m');
+});
+
 console.log('target card:');
 const TURRET = { clickCm: 0.25, perMark: 4, perTurn: 36 };
 const CTX = { p: { ...P }, angle: findZeroAngle({ ...P }), sg: 1.7, massKg: 175 * GRAIN_TO_KG };

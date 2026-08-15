@@ -142,6 +142,57 @@ test('denser air = more drop', () => {
   const thick = simulate({ ...P, rho: rho * 1.2 }, a1, [800])[0];
   assert(thick.y < thin.y);
 });
+
+console.log('target card:');
+const TURRET = { clickCm: 0.25, perMark: 4, perTurn: 36 };
+const CTX = { p: { ...P }, angle: findZeroAngle({ ...P }), sg: 1.7, massKg: 175 * GRAIN_TO_KG };
+
+test('row labels run A, B, C ... Z, AA, AB', () => {
+  assert.deepStrictEqual([0, 1, 4, 25, 26, 27, 51, 52].map(targetLabel),
+    ['A', 'B', 'E', 'Z', 'AA', 'AB', 'AZ', 'BA']);
+});
+test('clicksFor matches the README example', () =>
+  assert.strictEqual(clicksFor(40.14, 300, 0.25), 54));
+test('fmtClicks renders a dialable breakdown', () => {
+  assert.strictEqual(fmtClicks(54, 4, 36), '54 (13m+2)');
+  assert.strictEqual(fmtClicks(150, 4, 36), '150 (1t 1m+2)');
+});
+test('one target row solves', () => {
+  const s = solveShots(CTX, [300], TURRET);
+  assert.strictEqual(s.length, 1);
+  assert(s[0].dropCm > 40 && s[0].eClk > 0);
+});
+test('target order is preserved even when distances are unsorted', () => {
+  const s = solveShots(CTX, [600, 200, 400], TURRET);
+  assert.deepStrictEqual(s.map(x => x.dist), [600, 200, 400]);
+});
+test('duplicate distances both get a solution', () => {
+  const s = solveShots(CTX, [300, 300], TURRET);
+  assert.strictEqual(s.length, 2);
+  approx(s[0].dropCm, s[1].dropCm, 1e-9);
+});
+test('unreachable and missing distances come back null, neighbours still solve', () => {
+  const s = solveShots(CTX, [300, 20000, NaN, 0], TURRET);
+  assert(s[0] && s[0].eClk > 0);
+  assert.strictEqual(s[1], null);
+  assert.strictEqual(s[2], null);
+  assert.strictEqual(s[3], null);
+});
+test('farther target needs more elevation', () => {
+  const [a, b] = solveShots(CTX, [300, 600], TURRET);
+  assert(b.dropCm > a.dropCm && b.eClk > a.eClk);
+});
+test('spin drift is folded into the target wind column', () => {
+  twistDir = 'R';
+  const spun = solveShots(CTX, [800], TURRET)[0];
+  const flat = solveShots({ ...CTX, sg: null }, [800], TURRET)[0];
+  approx(flat.windCm, 0, 1e-9, 'no wind, no spin');
+  assert(spun.windCm > 0 && spun.side === 'R');
+});
+test('crosswind target drifts to the correct side', () => {
+  const s = solveShots({ ...CTX, p: { ...P, windZ: -4 }, sg: null }, [500], TURRET)[0];
+  assert(s.windCm < 0 && s.side === 'L' && s.wClk > 0);
+});
 `;
 
 eval(src + suite);

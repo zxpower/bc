@@ -46,11 +46,26 @@ aware) into the wind/drift column.
 
 > Note: this is a helper/estimator. Verify against real dope before relying on it.
 
+## Target card
+
+A third section builds a **dial-up card for a set of known targets** instead of an
+even range ladder. Add a row per target (minimum one), type its distance, and get
+the correction for each — rows are lettered **A, B, C, …** so they match how you
+range and call them.
+
+It reuses the load, atmosphere, wind and turret settings from the sections above,
+so the numbers agree with the trajectory table. For every target it shows drop
+(cm + MRAD/MOA), elevation clicks to dial UP, drift with the side it pushes to,
+windage clicks with the direction to dial, time of flight and remaining velocity.
+Targets are kept in the order you entered them, and any distance the bullet can't
+reach is reported as *no solution* rather than silently estimated.
+
 ## Tests
 
-`test.js` extracts the app's `<script>` from `index.html` and runs 28 assertions
+`test.js` extracts the app's `<script>` from `index.html` and runs 38 assertions
 against the pure functions (unit conversion, turret math, atmosphere, drag
-interpolation, Miller stability, spin drift, and trajectory-solver behaviour):
+interpolation, Miller stability, spin drift, trajectory-solver behaviour, and the
+target-card row labels/solver):
 
 ```bash
 node test.js

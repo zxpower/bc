@@ -53,6 +53,27 @@
   th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
   td:first-child, th:first-child { text-align: left; color: var(--accent2); font-weight: 700; }
   tbody tr:hover { background: rgba(78,161,255,.06); }
+  .trow { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+  .trow .tlabel {
+    flex: 0 0 40px; align-self: stretch; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(78,161,255,.12); border: 1px solid var(--border);
+    color: var(--accent); font-weight: 800; font-size: 15px;
+  }
+  .trow input { flex: 1; }
+  .trow .del {
+    flex: 0 0 44px; align-self: stretch; border-radius: 10px; cursor: pointer;
+    background: #0e1116; border: 1px solid var(--border); color: var(--muted);
+    font-size: 18px; line-height: 1;
+  }
+  .trow .del:hover { color: var(--danger); border-color: var(--danger); }
+  .trow .del:disabled { opacity: .3; cursor: not-allowed; }
+  button.ghost {
+    width: 100%; margin-top: 4px; padding: 12px; border-radius: 10px; cursor: pointer;
+    background: #0e1116; border: 1px dashed var(--border); color: var(--accent);
+    font-size: 14px; font-weight: 600;
+  }
+  button.ghost:hover { border-color: var(--accent); }
   .err { color: var(--danger); font-size: 13px; margin-top: 12px; }
   .note { color: var(--warn); font-size: 13px; margin-top: 12px; }
   .tcards { display: none; }
@@ -287,6 +308,22 @@
   <div class="tcards" id="tCards"></div>
 </div>
 
+<div class="card wide" id="card3">
+  <h1>Target Card</h1>
+  <div class="sub">Corrections for a set of known targets — uses the load, atmosphere,
+    wind and turret settings from the calculators above.</div>
+
+  <label>Target distances (m)</label>
+  <div id="targetRows"></div>
+  <button class="ghost" id="addTargetBtn">+ Add target</button>
+
+  <button class="primary" onclick="runTargets()">Calculate corrections</button>
+  <div class="err" id="gErr"></div>
+  <div class="note" id="gNote"></div>
+  <div class="table-wrap" id="gTableWrap"></div>
+  <div class="tcards" id="gCards"></div>
+</div>
+
 <footer>
   <p class="disclaimer">
     <strong>Disclaimer:</strong> this tool is provided for informational and
@@ -319,7 +356,7 @@ let trajUnit = 'MRAD';
 const STATE_KEY = 'bc-state-v1';
 
 function saveState() {
-  const s = { elevUnit, windUnit, windDir, dragModel, twistDir, trajUnit, inputs: {} };
+  const s = { elevUnit, windUnit, windDir, dragModel, twistDir, trajUnit, targets, inputs: {} };
   document.querySelectorAll('input').forEach(el => { if (el.id) s.inputs[el.id] = el.value; });
   try { localStorage.setItem(STATE_KEY, JSON.stringify(s)); } catch (e) { /* private mode */ }
 }
@@ -338,6 +375,7 @@ function loadState() {
   dragModel = s.dragModel || dragModel;
   twistDir = s.twistDir || twistDir;
   trajUnit = s.trajUnit || trajUnit;
+  if (Array.isArray(s.targets) && s.targets.length) targets = s.targets.map(v => String(v ?? ''));
 }
 
 function syncToggles() {
@@ -484,9 +522,9 @@ const DRAG_G7 = [
   [4.00,0.2141],[4.50,0.2065],[5.00,0.2003]
 ];
 
-function setDrag(m) { dragModel = m; syncToggles(); saveState(); refreshTable(); }
-function setTwist(d) { twistDir = d; syncToggles(); saveState(); refreshTable(); }
-function setTrajUnit(u) { trajUnit = u; syncToggles(); saveState(); refreshTable(); }
+function setDrag(m) { dragModel = m; syncToggles(); saveState(); refreshAll(); }
+function setTwist(d) { twistDir = d; syncToggles(); saveState(); refreshAll(); }
+function setTrajUnit(u) { trajUnit = u; syncToggles(); saveState(); refreshAll(); }
 
 // Miller gyroscopic stability factor (Sg), corrected for velocity & atmosphere.
 function millerSg(grains, dIn, lenIn, twistIn, mvFps, tempF, pressInHg) {
@@ -594,24 +632,36 @@ function findZeroAngle(p) {
   return a;
 }
 
-function runTrajectory() {
-  const errEl = $('tErr'), noteEl = $('tNote'), wrap = $('tTableWrap'), cardsEl = $('tCards');
-  const fail = msg => {
-    errEl.textContent = msg;
-    noteEl.textContent = '';
-    $('tStability').textContent = '';
-    wrap.innerHTML = '';
-    cardsEl.innerHTML = '';
-    delete wrap.dataset.has;
+/* Read the turret settings (card 1) once per render. */
+function turretSettings() {
+  return {
+    clickCm: parseFloat($('clickCm').value) || 0.25,
+    perMark: parseInt($('clicksPerMark').value, 10) || 1,
+    perTurn: parseInt($('marksPerTurn').value, 10) || 1
   };
-  errEl.textContent = '';
-  noteEl.textContent = '';
-  const num = id => parseFloat($(id).value);
+}
 
-  const from = num('tFrom'), to = num('tTo'), step = num('tStep');
+function clicksFor(offsetCm, dist, clickCmVal) {
+  const clickCmAtDist = clickCmVal * dist / 100;
+  return clickCmAtDist > 0 ? Math.round(offsetCm / clickCmAtDist) : 0;
+}
+
+// "54 (13m+2)" or "150 (1t 1m+2)" — dialable directly on the turret.
+function fmtClicks(n, perMark, perTurn) {
+  const a = Math.abs(n);
+  const b = breakdownClicks(a, perMark, perTurn);
+  if (!b) return String(a);
+  return a + ' (' + (b.turns > 0 ? b.turns + 't ' : '') + b.mark + 'm+' + b.rem + ')';
+}
+
+const angOf = (offsetCm, dist) => dist > 0 ? offsetCm / unitCm(trajUnit, dist) : 0;
+
+// Build the solver setup shared by the trajectory table and the target card.
+// Returns { p, angle, sg, massKg } or { error }.
+function trajectoryContext() {
+  const num = id => parseFloat($(id).value);
   const bc = num('tBc'), mv = num('tMv'), weight = num('tWeight');
-  if (!(mv > 0) || !(bc > 0)) return fail('Enter valid muzzle velocity and BC.');
-  if (!(step > 0) || to < from) return fail('Check range from/to/step.');
+  if (!(mv > 0) || !(bc > 0)) return { error: 'Enter valid muzzle velocity and BC.' };
 
   const rho = airDensity(num('tTemp'), num('tPress'), num('tHum'));
   const sound = 331.3 * Math.sqrt(1 + num('tTemp') / 273.15);
@@ -633,46 +683,45 @@ function runTrajectory() {
 
   // Zero is established in calm conditions; wind applies to the shot only.
   const angle = findZeroAngle({ ...p, windX: 0, windZ: 0 });
-  if (angle == null) return fail(`Cannot zero at ${p.zero} m with this load — check BC/model/velocity.`);
-
-  const samples = [];
-  for (let d = from; d <= to + 1e-6; d += step) samples.push(Math.round(d));
-  const rows = simulate(p, angle, samples);
-
-  if (rows.length < samples.length) {
-    const firstMissed = samples[rows.length];
-    noteEl.textContent =
-      `Ranges from ${firstMissed} m on are not reachable with this load (bullet too slow) — rows omitted.`;
+  if (angle == null) {
+    return { error: `Cannot zero at ${p.zero} m with this load — check BC/model/velocity.` };
   }
-  if (!rows.length) {
-    $('tStability').textContent = '';
-    wrap.innerHTML = '';
-    cardsEl.innerHTML = '';
-    delete wrap.dataset.has;
-    return;
-  }
-
-  const massKg = weight * GRAIN_TO_KG;
-  const clickCmVal = parseFloat($('clickCm').value) || 0.25;
-  const perMark = parseInt($('clicksPerMark').value, 10) || 1;
-  const perTurn = parseInt($('marksPerTurn').value, 10) || 1;
-
-  const clicksFor = (offsetCm, dist) => {
-    const clickCmAtDist = clickCmVal * dist / 100;
-    return clickCmAtDist > 0 ? Math.round(offsetCm / clickCmAtDist) : 0;
-  };
-  // "54 (13m+2)" or "150 (1t 1m+2)" — dialable directly on the turret.
-  const fmtClicks = n => {
-    const a = Math.abs(n);
-    const b = breakdownClicks(a, perMark, perTurn);
-    if (!b) return String(a);
-    return a + ' (' + (b.turns > 0 ? b.turns + 't ' : '') + b.mark + 'm+' + b.rem + ')';
-  };
 
   // Gyroscopic stability (Miller) from twist + bullet length.
   const sg = millerSg(weight, num('tCaliber') / 25.4, num('tLength') / 25.4, num('tTwist'),
     mv * 3.28084, num('tTemp') * 9 / 5 + 32, num('tPress') * 0.02953);
 
+  return { p, angle, sg, massKg: weight * GRAIN_TO_KG };
+}
+
+// Turn one raw solver sample into the numbers we actually dial.
+function deriveShot(ctx, r, t) {
+  const dist = r.dist;
+  const dropCm = -r.y * 100;                            // below LOS positive
+  const windCm = r.z * 100 + spinDriftCm(ctx.sg, r.t);  // wind + spin drift
+  return {
+    dist, v: r.v, tof: r.t, dropCm, windCm,
+    energy: 0.5 * ctx.massKg * r.v * r.v,
+    side: windCm >= 0 ? 'R' : 'L',
+    eClk: clicksFor(dropCm, dist, t.clickCm),
+    wClk: Math.abs(clicksFor(windCm, dist, t.clickCm))
+  };
+}
+
+// Solve an arbitrary (possibly unsorted, possibly duplicated) list of distances.
+// Returns one entry per input distance, null where the bullet can't reach.
+function solveShots(ctx, distances, t) {
+  const valid = distances.filter(d => d > 0);
+  const sorted = [...new Set(valid)].sort((a, b) => a - b);
+  if (!sorted.length) return distances.map(() => null);
+  const byDist = new Map(simulate(ctx.p, ctx.angle, sorted).map(r => [r.dist, r]));
+  return distances.map(d => {
+    const r = byDist.get(d);
+    return r ? deriveShot(ctx, r, t) : null;
+  });
+}
+
+function renderStability(sg) {
   const stEl = $('tStability');
   if (sg != null) {
     let msg = `Gyroscopic stability Sg = ${sg.toFixed(2)} · twist ${twistDir}-hand`;
@@ -685,10 +734,49 @@ function runTrajectory() {
     stEl.textContent = 'Enter caliber, bullet length and twist for stability + spin drift.';
     stEl.style.color = 'var(--muted)';
   }
+}
+
+function runTrajectory() {
+  const errEl = $('tErr'), noteEl = $('tNote'), wrap = $('tTableWrap'), cardsEl = $('tCards');
+  const fail = msg => {
+    errEl.textContent = msg;
+    noteEl.textContent = '';
+    $('tStability').textContent = '';
+    wrap.innerHTML = '';
+    cardsEl.innerHTML = '';
+    delete wrap.dataset.has;
+  };
+  errEl.textContent = '';
+  noteEl.textContent = '';
+  const num = id => parseFloat($(id).value);
+
+  const from = num('tFrom'), to = num('tTo'), step = num('tStep');
+  if (!(step > 0) || to < from) return fail('Check range from/to/step.');
+
+  const ctx = trajectoryContext();
+  if (ctx.error) return fail(ctx.error);
+
+  const samples = [];
+  for (let d = from; d <= to + 1e-6; d += step) samples.push(Math.round(d));
+  const t = turretSettings();
+  const raw = simulate(ctx.p, ctx.angle, samples);
+
+  if (raw.length < samples.length) {
+    const firstMissed = samples[raw.length];
+    noteEl.textContent =
+      `Ranges from ${firstMissed} m on are not reachable with this load (bullet too slow) — rows omitted.`;
+  }
+  if (!raw.length) {
+    $('tStability').textContent = '';
+    wrap.innerHTML = '';
+    cardsEl.innerHTML = '';
+    delete wrap.dataset.has;
+    return;
+  }
+
+  renderStability(ctx.sg);
 
   const uLabel = trajUnit;
-  const angOf = (offsetCm, dist) => dist > 0 ? offsetCm / unitCm(trajUnit, dist) : 0;
-
   let html = '<table><thead><tr>' +
     '<th>Dist m</th><th>Vel m/s</th><th>Energy J</th><th>ToF s</th>' +
     `<th>Drop cm</th><th>Drop ${uLabel}</th><th>Elev clk</th>` +
@@ -696,26 +784,21 @@ function runTrajectory() {
     '</tr></thead><tbody>';
   let cards = '';
 
-  for (const r of rows) {
-    const dist = r.dist;
-    const dropCm = -r.y * 100;                            // below LOS positive
-    const windCm = r.z * 100 + spinDriftCm(sg, r.t);      // wind + spin drift
-    const energy = 0.5 * massKg * r.v * r.v;
-    const side = windCm >= 0 ? 'R' : 'L';
-    const eClk = clicksFor(dropCm, dist);
-    const wClk = Math.abs(clicksFor(windCm, dist));
+  for (const raw_r of raw) {
+    const s = deriveShot(ctx, raw_r, t);
+    const dist = s.dist;
     html += '<tr>' +
-      `<td>${dist}</td><td>${r.v.toFixed(0)}</td><td>${energy.toFixed(0)}</td><td>${r.t.toFixed(2)}</td>` +
-      `<td>${dropCm.toFixed(1)}</td><td>${angOf(dropCm, dist).toFixed(2)}</td>` +
-      `<td>${fmtClicks(eClk)}</td>` +
-      `<td>${Math.abs(windCm).toFixed(1)} ${side}</td><td>${Math.abs(angOf(windCm, dist)).toFixed(2)}</td>` +
-      `<td>${fmtClicks(wClk)} ${side}</td>` +
+      `<td>${dist}</td><td>${s.v.toFixed(0)}</td><td>${s.energy.toFixed(0)}</td><td>${s.tof.toFixed(2)}</td>` +
+      `<td>${s.dropCm.toFixed(1)}</td><td>${angOf(s.dropCm, dist).toFixed(2)}</td>` +
+      `<td>${fmtClicks(s.eClk, t.perMark, t.perTurn)}</td>` +
+      `<td>${Math.abs(s.windCm).toFixed(1)} ${s.side}</td><td>${Math.abs(angOf(s.windCm, dist)).toFixed(2)}</td>` +
+      `<td>${fmtClicks(s.wClk, t.perMark, t.perTurn)} ${s.side}</td>` +
       '</tr>';
     cards +=
       `<div class="tcard"><div class="d">${dist} m</div>` +
-      `<div>Drop ${dropCm.toFixed(1)} cm · ${angOf(dropCm, dist).toFixed(2)} ${uLabel} · dial UP ${fmtClicks(eClk)}</div>` +
-      `<div>Wind ${Math.abs(windCm).toFixed(1)} cm ${side} · ${Math.abs(angOf(windCm, dist)).toFixed(2)} ${uLabel} · dial ${side === 'R' ? 'LEFT' : 'RIGHT'} ${fmtClicks(wClk)}</div>` +
-      `<div class="m">${r.v.toFixed(0)} m/s · ${energy.toFixed(0)} J · ${r.t.toFixed(2)} s</div></div>`;
+      `<div>Drop ${s.dropCm.toFixed(1)} cm · ${angOf(s.dropCm, dist).toFixed(2)} ${uLabel} · dial UP ${fmtClicks(s.eClk, t.perMark, t.perTurn)}</div>` +
+      `<div>Wind ${Math.abs(s.windCm).toFixed(1)} cm ${s.side} · ${Math.abs(angOf(s.windCm, dist)).toFixed(2)} ${uLabel} · dial ${s.side === 'R' ? 'LEFT' : 'RIGHT'} ${fmtClicks(s.wClk, t.perMark, t.perTurn)}</div>` +
+      `<div class="m">${s.v.toFixed(0)} m/s · ${s.energy.toFixed(0)} J · ${s.tof.toFixed(2)} s</div></div>`;
   }
   html += '</tbody></table>';
   wrap.innerHTML = html;
@@ -723,23 +806,155 @@ function runTrajectory() {
   wrap.dataset.has = '1';
 }
 
-// Re-run the trajectory automatically when settings affecting it change,
+/* ---------------- Card 3: target card ---------------- */
+
+// Spreadsheet-style row labels: A, B, … Z, AA, AB, …
+function targetLabel(i) {
+  let s = '';
+  for (let n = i; n >= 0; n = Math.floor(n / 26) - 1) s = String.fromCharCode(65 + n % 26) + s;
+  return s;
+}
+
+let targets = ['300'];   // one row minimum
+
+// Row values round-trip through localStorage, which is not trusted markup.
+const escAttr = s => String(s).replace(/[&<>"']/g,
+  c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function renderTargetRows() {
+  $('targetRows').innerHTML = targets.map((v, i) =>
+    `<div class="trow">` +
+    `<div class="tlabel">${targetLabel(i)}</div>` +
+    `<input class="tdist" type="number" inputmode="decimal" min="0" step="10" ` +
+    `data-i="${i}" value="${escAttr(v)}" placeholder="distance (m)">` +
+    `<button class="del" data-i="${i}" title="Remove target" ` +
+    `${targets.length > 1 ? '' : 'disabled'}>&times;</button>` +
+    `</div>`).join('');
+}
+
+function addTarget() {
+  targets.push('');
+  renderTargetRows();
+  saveState();
+  const rows = document.querySelectorAll('#targetRows .tdist');
+  if (rows.length) rows[rows.length - 1].focus();
+}
+
+function removeTarget(i) {
+  if (targets.length <= 1) return;
+  targets.splice(i, 1);
+  renderTargetRows();
+  saveState();
+  refreshTargets();
+}
+
+function runTargets() {
+  const errEl = $('gErr'), noteEl = $('gNote'), wrap = $('gTableWrap'), cardsEl = $('gCards');
+  const clear = () => { wrap.innerHTML = ''; cardsEl.innerHTML = ''; delete wrap.dataset.has; };
+  errEl.textContent = '';
+  noteEl.textContent = '';
+
+  const dists = targets.map(v => parseFloat(v));
+  if (!dists.some(d => d > 0)) {
+    errEl.textContent = 'Enter at least one target distance.';
+    return clear();
+  }
+
+  const ctx = trajectoryContext();
+  if (ctx.error) {
+    errEl.textContent = ctx.error;
+    return clear();
+  }
+  renderStability(ctx.sg);
+
+  const t = turretSettings();
+  const shots = solveShots(ctx, dists.map(d => Math.round(d)), t);
+  const uLabel = trajUnit;
+
+  let html = '<table><thead><tr>' +
+    '<th>Target</th><th>Dist m</th>' +
+    `<th>Drop cm</th><th>Elev ${uLabel}</th><th>Elev clk (UP)</th>` +
+    `<th>Drift cm</th><th>Wind ${uLabel}</th><th>Wind clk (dial)</th>` +
+    '<th>ToF s</th><th>Vel m/s</th>' +
+    '</tr></thead><tbody>';
+  let cards = '';
+  const unreachable = [];
+
+  shots.forEach((s, i) => {
+    const name = targetLabel(i);
+    if (!s) {
+      unreachable.push(name);
+      const shown = dists[i] > 0 ? Math.round(dists[i]) : '–';
+      html += `<tr><td>${name}</td><td>${shown}</td>` +
+        '<td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td></tr>';
+      cards += `<div class="tcard"><div class="d">${name} · ${shown} m</div>` +
+        '<div class="m">No solution — set a distance the bullet can reach.</div></div>';
+      return;
+    }
+    const dist = s.dist;
+    const dialSide = s.side === 'R' ? 'LEFT' : 'RIGHT';
+    html += '<tr>' +
+      `<td>${name}</td><td>${dist}</td>` +
+      `<td>${s.dropCm.toFixed(1)}</td><td>${angOf(s.dropCm, dist).toFixed(2)}</td>` +
+      `<td>${fmtClicks(s.eClk, t.perMark, t.perTurn)}</td>` +
+      `<td>${Math.abs(s.windCm).toFixed(1)} ${s.side}</td>` +
+      `<td>${Math.abs(angOf(s.windCm, dist)).toFixed(2)}</td>` +
+      `<td>${fmtClicks(s.wClk, t.perMark, t.perTurn)} ${dialSide.charAt(0)}</td>` +
+      `<td>${s.tof.toFixed(2)}</td><td>${s.v.toFixed(0)}</td>` +
+      '</tr>';
+    cards +=
+      `<div class="tcard"><div class="d">${name} · ${dist} m</div>` +
+      `<div>Drop ${s.dropCm.toFixed(1)} cm · ${angOf(s.dropCm, dist).toFixed(2)} ${uLabel} · dial UP ${fmtClicks(s.eClk, t.perMark, t.perTurn)}</div>` +
+      `<div>Wind ${Math.abs(s.windCm).toFixed(1)} cm ${s.side} · ${Math.abs(angOf(s.windCm, dist)).toFixed(2)} ${uLabel} · dial ${dialSide} ${fmtClicks(s.wClk, t.perMark, t.perTurn)}</div>` +
+      `<div class="m">${s.v.toFixed(0)} m/s · ${s.energy.toFixed(0)} J · ${s.tof.toFixed(2)} s</div></div>`;
+  });
+
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+  cardsEl.innerHTML = cards;
+  wrap.dataset.has = '1';
+  if (unreachable.length) {
+    noteEl.textContent = `No solution for target${unreachable.length > 1 ? 's' : ''} ` +
+      `${unreachable.join(', ')} — distance missing or beyond this load's reach.`;
+  }
+}
+
+// Re-run automatically when settings affecting them change,
 // but only if a table is already on screen.
 function refreshTable() {
   if ($('tTableWrap').dataset.has === '1') runTrajectory();
 }
+function refreshTargets() {
+  if ($('gTableWrap').dataset.has === '1') runTargets();
+}
+function refreshAll() { refreshTable(); refreshTargets(); }
 
 /* ---------------- Wiring ---------------- */
 document.querySelectorAll('#card1 input').forEach(el => el.addEventListener('input', () => {
   calc();
   saveState();
-  if (['clickCm', 'clicksPerMark', 'marksPerTurn'].includes(el.id)) refreshTable();
+  if (['clickCm', 'clicksPerMark', 'marksPerTurn'].includes(el.id)) refreshAll();
 }));
 document.querySelectorAll('#card2 input').forEach(el => el.addEventListener('input', saveState));
+
+// Target rows are rebuilt on add/remove, so listen on the container.
+$('targetRows').addEventListener('input', e => {
+  const i = e.target.dataset ? e.target.dataset.i : null;
+  if (i == null) return;
+  targets[i] = e.target.value;
+  saveState();
+  refreshTargets();
+});
+$('targetRows').addEventListener('click', e => {
+  const btn = e.target.closest ? e.target.closest('.del') : null;
+  if (btn) removeTarget(Number(btn.dataset.i));
+});
+$('addTargetBtn').addEventListener('click', addTarget);
 
 loadState();
 syncToggles();
 calc();
+renderTargetRows();
 </script>
 </body>
 </html>

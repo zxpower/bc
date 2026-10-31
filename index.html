@@ -145,7 +145,7 @@
 <body>
 <div class="card wide" id="gearCard">
   <h1>Saved gear</h1>
-  <div class="sub">Save rifles, optics and cartridges by name and switch between them.
+  <div class="sub">Save rifles, optics and ammo loads by name and switch between them.
     Stored in this browser only.</div>
   <div class="gear-grid" id="gearRows"></div>
 </div>
@@ -212,19 +212,25 @@
   <h1>Full Trajectory Calculator</h1>
   <div class="sub">Point-mass solver (G1/G7 drag) — produces a drop &amp; wind table with scope adjustments.</div>
 
-  <div class="section-title">Bullet</div>
+  <div class="section-title">Load</div>
   <div class="grid3">
     <div>
-      <label>Caliber (mm)</label>
-      <input id="tCaliber" type="number" inputmode="decimal" value="7.62" min="0" step="0.01">
-    </div>
-    <div>
-      <label>Weight (grains)</label>
-      <input id="tWeight" type="number" inputmode="decimal" value="175" min="0" step="1">
+      <label>Bullet weight</label>
+      <div class="row">
+        <div><input id="tWeight" type="number" inputmode="decimal" value="175" min="0" step="1"></div>
+        <div class="toggle" style="flex:0 0 96px;margin-top:0">
+          <button id="wGrBtn" class="active" onclick="setWeightUnit('GR')">gr</button>
+          <button id="wGBtn" onclick="setWeightUnit('G')">g</button>
+        </div>
+      </div>
     </div>
     <div>
       <label>Muzzle velocity (m/s)</label>
       <input id="tMv" type="number" inputmode="decimal" value="800" min="0" step="1">
+    </div>
+    <div>
+      <label>Bullet length (mm)</label>
+      <input id="tLength" type="number" inputmode="decimal" value="32.8" min="0" step="0.1">
     </div>
   </div>
   <div class="grid2" style="margin-top:10px">
@@ -242,19 +248,18 @@
     </div>
   </div>
 
-  <div class="grid2" style="margin-top:10px">
+  <div class="section-title">Rifle &amp; scope</div>
+  <div class="grid2">
     <div>
-      <label>Bullet length (mm)</label>
-      <input id="tLength" type="number" inputmode="decimal" value="32.8" min="0" step="0.1">
+      <label>Caliber (mm)</label>
+      <input id="tCaliber" type="number" inputmode="decimal" value="7.62" min="0" step="0.01">
     </div>
     <div>
       <label>Barrel twist (1 turn in … in)</label>
       <input id="tTwist" type="number" inputmode="decimal" value="11" min="0" step="0.5">
     </div>
   </div>
-
-  <div class="section-title">Rifle &amp; scope</div>
-  <div class="grid2">
+  <div class="grid2" style="margin-top:10px">
     <div>
       <label>Zero distance (m)</label>
       <input id="tZero" type="number" inputmode="decimal" value="100" min="1" step="1">
@@ -375,11 +380,12 @@ let windDir = 'L';
 let dragModel = 'G7';    // matches default BC 0.243 (175gr SMK, G7)
 let twistDir = 'R';
 let trajUnit = 'MRAD';
+let weightUnit = 'GR';   // bullet weight entered in grains (GR) or grams (G)
 
 const STATE_KEY = 'bc-state-v1';
 
 function saveState() {
-  const s = { elevUnit, windUnit, windDir, dragModel, twistDir, trajUnit, targets, inputs: {} };
+  const s = { elevUnit, windUnit, windDir, dragModel, twistDir, trajUnit, weightUnit, targets, inputs: {} };
   document.querySelectorAll('input').forEach(el => { if (el.id) s.inputs[el.id] = el.value; });
   try { localStorage.setItem(STATE_KEY, JSON.stringify(s)); } catch (e) { /* private mode */ }
   updateGearStatus();
@@ -399,6 +405,7 @@ function loadState() {
   dragModel = s.dragModel || dragModel;
   twistDir = s.twistDir || twistDir;
   trajUnit = s.trajUnit || trajUnit;
+  if (s.weightUnit === 'GR' || s.weightUnit === 'G') weightUnit = s.weightUnit;
   if (Array.isArray(s.targets) && s.targets.length) targets = s.targets.map(v => String(v ?? ''));
 }
 
@@ -417,6 +424,8 @@ function syncToggles() {
   $('twLBtn').classList.toggle('active', twistDir === 'L');
   $('tuMradBtn').classList.toggle('active', trajUnit === 'MRAD');
   $('tuMoaBtn').classList.toggle('active', trajUnit === 'MOA');
+  $('wGrBtn').classList.toggle('active', weightUnit === 'GR');
+  $('wGBtn').classList.toggle('active', weightUnit === 'G');
 }
 
 /* ---------------- Card 1: turret click calculator ---------------- */
@@ -598,6 +607,27 @@ function setDrag(m) {
   saveState();
   refreshAll();
 }
+// Bullet weight in grains, whichever unit it was entered in.
+function weightGrains(val, unit) {
+  return unit === 'G' ? val / GRAMS_PER_GRAIN : val;
+}
+
+// Switching unit converts the value in place, like the other unit toggles.
+function setWeightUnit(u) {
+  if (u === weightUnit) return;
+  const el = $('tWeight');
+  const v = parseFloat(el.value);
+  if (v > 0) {
+    el.value = u === 'G'
+      ? Math.round(v * GRAMS_PER_GRAIN * 100) / 100
+      : Math.round(v / GRAMS_PER_GRAIN * 10) / 10;
+  }
+  weightUnit = u;
+  syncToggles();
+  saveState();
+  refreshAll();
+}
+
 function setTwist(d) { twistDir = d; syncToggles(); saveState(); refreshAll(); }
 function setTrajUnit(u) { trajUnit = u; syncToggles(); saveState(); refreshAll(); }
 
@@ -641,7 +671,8 @@ function airDensity(tempC, pressHpa, humPct) {
   return (P - Pv) / (287.058 * T) + Pv / (461.495 * T);
 }
 
-const GRAIN_TO_KG = 0.0000647989;
+const GRAMS_PER_GRAIN = 0.06479891;
+const GRAIN_TO_KG = GRAMS_PER_GRAIN / 1000;
 const G = 9.80665;
 
 function accel(vx, vy, vz, p) {
@@ -735,7 +766,7 @@ const angOf = (offsetCm, dist) => dist > 0 ? offsetCm / unitCm(trajUnit, dist) :
 // Returns { p, angle, sg, massKg } or { error }.
 function trajectoryContext() {
   const num = id => parseFloat($(id).value);
-  const bc = num('tBc'), mv = num('tMv'), weight = num('tWeight');
+  const bc = num('tBc'), mv = num('tMv'), weight = weightGrains(num('tWeight'), weightUnit);
   if (!(mv > 0) || !(bc > 0)) return { error: 'Enter valid muzzle velocity and BC.' };
 
   const rho = airDensity(num('tTemp'), num('tPress'), num('tHum'));
@@ -1004,7 +1035,7 @@ function refreshTargets() {
 }
 function refreshAll() { refreshTable(); refreshTargets(); }
 
-/* ---------------- Saved gear: rifles, optics, cartridges ---------------- */
+/* ---------------- Saved gear: rifles, optics, ammo loads ---------------- */
 
 // Each kind owns a set of input fields plus the toggle state that belongs to it.
 // A profile is a plain snapshot of those values, so loading one is just a write-back.
@@ -1012,10 +1043,10 @@ const GEAR_KEY = 'bc-gear-v1';
 const GEAR_KINDS = {
   rifle: {
     title: 'Rifle', plural: 'rifles',
-    inputs: ['tTwist', 'tSight', 'tZero'],
+    inputs: ['tCaliber', 'tTwist', 'tSight', 'tZero'],
     read: () => ({ twistDir }),
     write: d => { if (d.twistDir === 'L' || d.twistDir === 'R') twistDir = d.twistDir; },
-    suggest: () => `1:${$('tTwist').value} rifle`
+    suggest: () => `${$('tCaliber').value} mm 1:${$('tTwist').value}`
   },
   optic: {
     title: 'Optic', plural: 'optics',
@@ -1024,13 +1055,18 @@ const GEAR_KINDS = {
     write: d => { if (d.trajUnit === 'MRAD' || d.trajUnit === 'MOA') trajUnit = d.trajUnit; },
     suggest: () => `${$('clickCm').value} cm/100m scope`
   },
-  cartridge: {
-    title: 'Cartridge', plural: 'cartridges',
-    inputs: ['tCaliber', 'tWeight', 'tMv', 'tBc', 'tLength'],
-    read: () => ({ dragModel }),
-    // A saved BC is stored with its model, so it is restored as-is — no conversion.
-    write: d => { if (d.dragModel === 'G1' || d.dragModel === 'G7') dragModel = d.dragModel; },
-    suggest: () => `${$('tCaliber').value} mm ${$('tWeight').value} gr`
+  load: {
+    // An ammo load: bullet weight, muzzle velocity and BC. The name is free text
+    // (cartridge, bullet, lot number — whatever identifies it).
+    title: 'Load', plural: 'loads',
+    inputs: ['tWeight', 'tMv', 'tBc'],
+    read: () => ({ weightUnit, dragModel }),
+    // Weight and BC are stored with their units/model, so they are restored as-is.
+    write: d => {
+      if (d.weightUnit === 'GR' || d.weightUnit === 'G') weightUnit = d.weightUnit;
+      if (d.dragModel === 'G1' || d.dragModel === 'G7') dragModel = d.dragModel;
+    },
+    suggest: () => `${$('tWeight').value} ${weightUnit === 'G' ? 'g' : 'gr'} @ ${$('tMv').value} m/s`
   }
 };
 

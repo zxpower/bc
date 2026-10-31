@@ -238,13 +238,13 @@ console.log('saved gear:');
 test('empty / garbage storage gives an empty store for every kind', () => {
   for (const raw of [null, 'x', 42, [], { rifle: 'nope' }]) {
     const g = sanitizeGear(raw);
-    assert.deepStrictEqual(Object.keys(g).sort(), ['cartridge', 'optic', 'rifle']);
+    assert.deepStrictEqual(Object.keys(g).sort(), ['load', 'optic', 'rifle']);
     for (const k of Object.keys(g)) assert.deepStrictEqual(g[k], { items: [], active: null });
   }
 });
 test('well-formed profiles survive, malformed ones are dropped', () => {
   const g = sanitizeGear({
-    cartridge: {
+    load: {
       active: 'a',
       items: [
         { id: 'a', name: ' 175 SMK ', data: { tBc: '0.243', dragModel: 'G7', tMv: 800, evil: { x: 1 } } },
@@ -255,18 +255,22 @@ test('well-formed profiles survive, malformed ones are dropped', () => {
       ]
     }
   });
-  assert.strictEqual(g.cartridge.items.length, 1);
-  assert.strictEqual(g.cartridge.items[0].name, '175 SMK');
-  assert.deepStrictEqual(g.cartridge.items[0].data, { tBc: '0.243', dragModel: 'G7', tMv: '800' });
-  assert.strictEqual(g.cartridge.active, 'a');
+  assert.strictEqual(g.load.items.length, 1);
+  assert.strictEqual(g.load.items[0].name, '175 SMK');
+  assert.deepStrictEqual(g.load.items[0].data, { tBc: '0.243', dragModel: 'G7', tMv: '800' });
+  assert.strictEqual(g.load.active, 'a');
 });
 test('active id pointing at a missing profile is cleared', () =>
   assert.strictEqual(sanitizeGear({ optic: { active: 'gone', items: [] } }).optic.active, null));
 test('each kind snapshots its own fields and toggle', () => {
-  assert.deepStrictEqual(Object.keys(gearSnapshot('rifle')).sort(), ['tSight', 'tTwist', 'tZero', 'twistDir']);
+  assert.deepStrictEqual(Object.keys(gearSnapshot('rifle')).sort(), ['tCaliber', 'tSight', 'tTwist', 'tZero', 'twistDir']);
   assert.deepStrictEqual(Object.keys(gearSnapshot('optic')).sort(), ['clickCm', 'clicksPerMark', 'marksPerTurn', 'trajUnit']);
-  assert.deepStrictEqual(Object.keys(gearSnapshot('cartridge')).sort(),
-    ['dragModel', 'tBc', 'tCaliber', 'tLength', 'tMv', 'tWeight']);
+  assert.deepStrictEqual(Object.keys(gearSnapshot('load')).sort(), ['dragModel', 'tBc', 'tMv', 'tWeight', 'weightUnit']);
+});
+test('bullet weight: grains pass through, grams convert (11.34 g = 175 gr)', () => {
+  assert.strictEqual(weightGrains(175, 'GR'), 175);
+  approx(weightGrains(11.34, 'G'), 175, 0.05);
+  approx(weightGrains(1, 'G'), 15.432, 0.001);
 });
 test('no input field belongs to two kinds', () => {
   const all = Object.values(GEAR_KINDS).flatMap(k => k.inputs);

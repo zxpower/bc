@@ -27,9 +27,9 @@ A second section computes the whole trajectory from first principles instead of 
 single known drop. It's a 3-DOF point-mass solver using the standard **G1/G7**
 drag models:
 
-- **Bullet:** caliber, weight (grains), length (mm), muzzle velocity (m/s),
-  ballistic coefficient (G1 or G7)
-- **Rifle/scope:** zero distance, sight height over bore, barrel twist &
+- **Load:** bullet weight (grains or grams; the toggle converts in place),
+  muzzle velocity (m/s), ballistic coefficient (G1 or G7), bullet length (mm)
+- **Rifle/scope:** caliber, zero distance, sight height over bore, barrel twist &
   twist direction (drives gyroscopic stability + spin drift)
 - **Atmosphere:** temperature, pressure, humidity (used for real air density)
 - **Wind:** speed + direction as a clock hour (12 = headwind, 3 = from the right)
@@ -85,27 +85,30 @@ equipment, so you can switch setups without retyping:
 
 | Kind | What it stores |
 | --- | --- |
-| **Rifle** | barrel twist, twist direction, sight height over bore, zero distance |
+| **Rifle** | caliber, barrel twist, twist direction, sight height over bore, zero distance |
 | **Optic** | click value, clicks per mark, marks per turn, MRAD/MOA output units |
-| **Cartridge** | caliber, weight, muzzle velocity, BC + G1/G7 model, bullet length |
+| **Load** | bullet weight (grains or grams), muzzle velocity, BC + G1/G7 model |
 
 Pick a profile from the dropdown to load it. The calculators and any tables
 already on screen recalculate straight away. **Save as…** stores the current
 values under a new name, **Save** overwrites the selected profile, and
 **Delete** removes it. If you edit a field after loading a profile, the card
 shows *Modified* until you save. Profiles are mixed and matched freely (any
-rifle + any optic + any cartridge). A cartridge's BC is restored together with
-its drag model, so it is never re-converted.
+rifle + any optic + any load). A load is an ammo load, so its name is free text:
+the cartridge, bullet, lot number or anything else that identifies it. Its
+weight and BC are restored together with their unit and drag model, so they are
+never re-converted.
 
 Profiles live in the browser's `localStorage` (`bc-gear-v1`). They stay on this
 device and browser and are separate from the autosaved form state.
 
 ## Tests
 
-`test.js` extracts the app's `<script>` from `index.html` and runs 51 assertions
+`test.js` extracts the app's `<script>` from `index.html` and runs 52 assertions
 against the pure functions (unit conversion, turret math, atmosphere, drag
 interpolation, Miller stability, spin drift, trajectory-solver behaviour, G1↔G7
-BC conversion, the target-card row labels/solver, and saved-gear storage):
+BC conversion, grain/gram weight, the target-card row labels/solver, and
+saved-gear storage):
 
 ```bash
 node test.js

@@ -233,6 +233,45 @@ test('crosswind target drifts to the correct side', () => {
   const s = solveShots({ ...CTX, p: { ...P, windZ: -4 }, sg: null }, [500], TURRET)[0];
   assert(s.windCm < 0 && s.side === 'L' && s.wClk > 0);
 });
+
+console.log('saved gear:');
+test('empty / garbage storage gives an empty store for every kind', () => {
+  for (const raw of [null, 'x', 42, [], { rifle: 'nope' }]) {
+    const g = sanitizeGear(raw);
+    assert.deepStrictEqual(Object.keys(g).sort(), ['cartridge', 'optic', 'rifle']);
+    for (const k of Object.keys(g)) assert.deepStrictEqual(g[k], { items: [], active: null });
+  }
+});
+test('well-formed profiles survive, malformed ones are dropped', () => {
+  const g = sanitizeGear({
+    cartridge: {
+      active: 'a',
+      items: [
+        { id: 'a', name: ' 175 SMK ', data: { tBc: '0.243', dragModel: 'G7', tMv: 800, evil: { x: 1 } } },
+        { id: 'a', name: 'dup id', data: {} },
+        { id: 'b', name: '', data: {} },
+        { id: 'c', name: 'no data' },
+        null
+      ]
+    }
+  });
+  assert.strictEqual(g.cartridge.items.length, 1);
+  assert.strictEqual(g.cartridge.items[0].name, '175 SMK');
+  assert.deepStrictEqual(g.cartridge.items[0].data, { tBc: '0.243', dragModel: 'G7', tMv: '800' });
+  assert.strictEqual(g.cartridge.active, 'a');
+});
+test('active id pointing at a missing profile is cleared', () =>
+  assert.strictEqual(sanitizeGear({ optic: { active: 'gone', items: [] } }).optic.active, null));
+test('each kind snapshots its own fields and toggle', () => {
+  assert.deepStrictEqual(Object.keys(gearSnapshot('rifle')).sort(), ['tSight', 'tTwist', 'tZero', 'twistDir']);
+  assert.deepStrictEqual(Object.keys(gearSnapshot('optic')).sort(), ['clickCm', 'clicksPerMark', 'marksPerTurn', 'trajUnit']);
+  assert.deepStrictEqual(Object.keys(gearSnapshot('cartridge')).sort(),
+    ['dragModel', 'tBc', 'tCaliber', 'tLength', 'tMv', 'tWeight']);
+});
+test('no input field belongs to two kinds', () => {
+  const all = Object.values(GEAR_KINDS).flatMap(k => k.inputs);
+  assert.strictEqual(new Set(all).size, all.length);
+});
 `;
 
 eval(src + suite);

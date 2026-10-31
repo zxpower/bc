@@ -125,9 +125,31 @@
   footer .credit { font-size: 13px; margin: 0; }
   footer a { color: var(--accent); text-decoration: none; }
   footer a:hover { text-decoration: underline; }
+  .gear-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .gear-grid > div { min-width: 0; }
+  .gear-grid label { margin-top: 0; }
+  .gear-btns { display: flex; gap: 6px; margin-top: 8px; }
+  .gear-btns button {
+    flex: 1; padding: 8px 6px; border-radius: 8px; cursor: pointer;
+    background: #0e1116; border: 1px solid var(--border); color: var(--muted);
+    font-size: 13px; font-weight: 600;
+  }
+  .gear-btns button:hover { color: var(--text); border-color: var(--accent); }
+  .gear-btns button.danger:hover { color: var(--danger); border-color: var(--danger); }
+  .gear-btns button:disabled { opacity: .3; cursor: not-allowed; }
+  .gear-status { font-size: 12px; color: var(--muted); margin-top: 6px; min-height: 1em; }
+  .gear-status.mod { color: var(--warn); }
+  @media (max-width: 700px) { .gear-grid { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
+<div class="card wide" id="gearCard">
+  <h1>Saved gear</h1>
+  <div class="sub">Save rifles, optics and cartridges by name and switch between them.
+    Stored in this browser only.</div>
+  <div class="gear-grid" id="gearRows"></div>
+</div>
+
 <div class="card" id="card1">
   <h1>Ballistic Turret Calculator</h1>
   <div class="sub">How many clicks to dial for a given drop &amp; distance.</div>
@@ -360,6 +382,7 @@ function saveState() {
   const s = { elevUnit, windUnit, windDir, dragModel, twistDir, trajUnit, targets, inputs: {} };
   document.querySelectorAll('input').forEach(el => { if (el.id) s.inputs[el.id] = el.value; });
   try { localStorage.setItem(STATE_KEY, JSON.stringify(s)); } catch (e) { /* private mode */ }
+  updateGearStatus();
 }
 
 function loadState() {
@@ -981,6 +1004,187 @@ function refreshTargets() {
 }
 function refreshAll() { refreshTable(); refreshTargets(); }
 
+/* ---------------- Saved gear: rifles, optics, cartridges ---------------- */
+
+// Each kind owns a set of input fields plus the toggle state that belongs to it.
+// A profile is a plain snapshot of those values, so loading one is just a write-back.
+const GEAR_KEY = 'bc-gear-v1';
+const GEAR_KINDS = {
+  rifle: {
+    title: 'Rifle', plural: 'rifles',
+    inputs: ['tTwist', 'tSight', 'tZero'],
+    read: () => ({ twistDir }),
+    write: d => { if (d.twistDir === 'L' || d.twistDir === 'R') twistDir = d.twistDir; },
+    suggest: () => `1:${$('tTwist').value} rifle`
+  },
+  optic: {
+    title: 'Optic', plural: 'optics',
+    inputs: ['clickCm', 'clicksPerMark', 'marksPerTurn'],
+    read: () => ({ trajUnit }),
+    write: d => { if (d.trajUnit === 'MRAD' || d.trajUnit === 'MOA') trajUnit = d.trajUnit; },
+    suggest: () => `${$('clickCm').value} cm/100m scope`
+  },
+  cartridge: {
+    title: 'Cartridge', plural: 'cartridges',
+    inputs: ['tCaliber', 'tWeight', 'tMv', 'tBc', 'tLength'],
+    read: () => ({ dragModel }),
+    // A saved BC is stored with its model, so it is restored as-is — no conversion.
+    write: d => { if (d.dragModel === 'G1' || d.dragModel === 'G7') dragModel = d.dragModel; },
+    suggest: () => `${$('tCaliber').value} mm ${$('tWeight').value} gr`
+  }
+};
+
+const emptyGear = () => Object.fromEntries(Object.keys(GEAR_KINDS).map(k => [k, { items: [], active: null }]));
+
+// localStorage is not trusted: keep only well-formed profiles with string values.
+function sanitizeGear(raw) {
+  const out = emptyGear();
+  if (!raw || typeof raw !== 'object') return out;
+  for (const kind of Object.keys(GEAR_KINDS)) {
+    const src = raw[kind];
+    if (!src || !Array.isArray(src.items)) continue;
+    const seen = new Set();
+    for (const it of src.items) {
+      if (!it || typeof it.id !== 'string' || !it.id || seen.has(it.id)) continue;
+      if (typeof it.name !== 'string' || !it.name.trim()) continue;
+      if (!it.data || typeof it.data !== 'object') continue;
+      const data = {};
+      for (const [k, v] of Object.entries(it.data)) {
+        if (typeof v === 'string' || typeof v === 'number') data[k] = String(v);
+      }
+      seen.add(it.id);
+      out[kind].items.push({ id: it.id, name: it.name.trim(), data });
+    }
+    if (seen.has(src.active)) out[kind].active = src.active;
+  }
+  return out;
+}
+
+let gear = emptyGear();
+
+function loadGear() {
+  try { gear = sanitizeGear(JSON.parse(localStorage.getItem(GEAR_KEY) || 'null')); }
+  catch (e) { gear = emptyGear(); }
+}
+function saveGear() {
+  try { localStorage.setItem(GEAR_KEY, JSON.stringify(gear)); } catch (e) { /* private mode */ }
+}
+
+const gearId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const activeItem = kind => gear[kind].items.find(it => it.id === gear[kind].active) || null;
+
+function gearSnapshot(kind) {
+  const k = GEAR_KINDS[kind];
+  const d = {};
+  Object.entries(k.read()).forEach(([key, v]) => { d[key] = String(v); });
+  k.inputs.forEach(id => { d[id] = $(id).value; });
+  return d;
+}
+
+// True when the on-screen values differ from what the profile stored.
+function gearModified(kind, item) {
+  const now = gearSnapshot(kind);
+  return Object.keys(now).some(key => key in item.data && item.data[key] !== now[key]);
+}
+
+function applyGear(kind, item) {
+  const k = GEAR_KINDS[kind];
+  k.inputs.forEach(id => { if (item.data[id] != null) $(id).value = item.data[id]; });
+  k.write(item.data);
+  gear[kind].active = item.id;
+  saveGear();
+  syncToggles();
+  calc();
+  updateBcHint();
+  saveState();
+  refreshAll();
+}
+
+function renderGear() {
+  $('gearRows').innerHTML = Object.entries(GEAR_KINDS).map(([kind, k]) => {
+    const g = gear[kind];
+    const opts = [`<option value="">${g.items.length ? '— not saved —' : `no saved ${k.plural} yet`}</option>`]
+      .concat(g.items.map(it =>
+        `<option value="${escAttr(it.id)}"${it.id === g.active ? ' selected' : ''}>${escAttr(it.name)}</option>`));
+    return `<div data-kind="${kind}">` +
+      `<label for="gear-${kind}">${k.title}</label>` +
+      `<select id="gear-${kind}" class="gear-sel">${opts.join('')}</select>` +
+      `<div class="gear-btns">` +
+      `<button data-act="save" title="Overwrite the selected ${k.title.toLowerCase()} with the current values">Save</button>` +
+      `<button data-act="saveas" title="Save the current values under a new name">Save as…</button>` +
+      `<button data-act="del" class="danger"${g.active ? '' : ' disabled'}>Delete</button>` +
+      `</div>` +
+      `<div class="gear-status" id="gear-${kind}-status"></div>` +
+      `</div>`;
+  }).join('');
+  updateGearStatus();
+}
+
+function updateGearStatus() {
+  for (const kind of Object.keys(GEAR_KINDS)) {
+    const el = $(`gear-${kind}-status`);
+    const item = activeItem(kind);
+    const mod = !!item && gearModified(kind, item);
+    el.textContent = mod ? 'Modified — Save to keep changes' : '';
+    el.classList.toggle('mod', mod);
+  }
+}
+
+function gearSaveAs(kind) {
+  const k = GEAR_KINDS[kind];
+  const cur = activeItem(kind);
+  const name = (prompt(`Name for this ${k.title.toLowerCase()}:`, cur ? cur.name : k.suggest()) || '').trim();
+  if (!name) return;
+  const g = gear[kind];
+  const clash = g.items.find(it => it.name.toLowerCase() === name.toLowerCase());
+  if (clash) {
+    if (!confirm(`"${clash.name}" already exists. Overwrite it?`)) return;
+    clash.data = gearSnapshot(kind);
+    g.active = clash.id;
+  } else {
+    const item = { id: gearId(), name, data: gearSnapshot(kind) };
+    g.items.push(item);
+    g.items.sort((a, b) => a.name.localeCompare(b.name));
+    g.active = item.id;
+  }
+  saveGear();
+  renderGear();
+}
+
+function gearSave(kind) {
+  const item = activeItem(kind);
+  if (!item) return gearSaveAs(kind);
+  item.data = gearSnapshot(kind);
+  saveGear();
+  updateGearStatus();
+}
+
+function gearDelete(kind) {
+  const item = activeItem(kind);
+  if (!item || !confirm(`Delete ${GEAR_KINDS[kind].title.toLowerCase()} "${item.name}"?`)) return;
+  const g = gear[kind];
+  g.items = g.items.filter(it => it.id !== item.id);
+  g.active = null;
+  saveGear();
+  renderGear();
+}
+
+$('gearRows').addEventListener('change', e => {
+  const box = e.target.closest ? e.target.closest('[data-kind]') : null;
+  if (!box || !e.target.classList.contains('gear-sel')) return;
+  const kind = box.dataset.kind;
+  const item = gear[kind].items.find(it => it.id === e.target.value);
+  if (item) applyGear(kind, item);
+  else { gear[kind].active = null; saveGear(); }
+  renderGear();
+});
+$('gearRows').addEventListener('click', e => {
+  const btn = e.target.closest ? e.target.closest('button[data-act]') : null;
+  if (!btn) return;
+  const kind = btn.closest('[data-kind]').dataset.kind;
+  ({ save: gearSave, saveas: gearSaveAs, del: gearDelete })[btn.dataset.act](kind);
+});
+
 /* ---------------- Wiring ---------------- */
 document.querySelectorAll('#card1 input').forEach(el => el.addEventListener('input', () => {
   calc();
@@ -1007,9 +1211,11 @@ $('targetRows').addEventListener('click', e => {
 $('addTargetBtn').addEventListener('click', addTarget);
 
 loadState();
+loadGear();
 syncToggles();
 calc();
 renderTargetRows();
+renderGear();
 updateBcHint();
 </script>
 </body>

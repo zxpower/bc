@@ -78,12 +78,34 @@ windage clicks with the direction to dial, time of flight and remaining velocity
 Targets are kept in the order you entered them, and any distance the bullet can't
 reach is reported as *no solution* rather than silently estimated.
 
+## Saved gear
+
+The **Saved gear** card at the top stores named profiles for three kinds of
+equipment, so you can switch setups without retyping:
+
+| Kind | What it stores |
+| --- | --- |
+| **Rifle** | barrel twist, twist direction, sight height over bore, zero distance |
+| **Optic** | click value, clicks per mark, marks per turn, MRAD/MOA output units |
+| **Cartridge** | caliber, weight, muzzle velocity, BC + G1/G7 model, bullet length |
+
+Pick a profile from the dropdown to load it. The calculators and any tables
+already on screen recalculate straight away. **Save as…** stores the current
+values under a new name, **Save** overwrites the selected profile, and
+**Delete** removes it. If you edit a field after loading a profile, the card
+shows *Modified* until you save. Profiles are mixed and matched freely (any
+rifle + any optic + any cartridge). A cartridge's BC is restored together with
+its drag model, so it is never re-converted.
+
+Profiles live in the browser's `localStorage` (`bc-gear-v1`). They stay on this
+device and browser and are separate from the autosaved form state.
+
 ## Tests
 
-`test.js` extracts the app's `<script>` from `index.html` and runs 46 assertions
+`test.js` extracts the app's `<script>` from `index.html` and runs 51 assertions
 against the pure functions (unit conversion, turret math, atmosphere, drag
 interpolation, Miller stability, spin drift, trajectory-solver behaviour, G1↔G7
-BC conversion, and the target-card row labels/solver):
+BC conversion, the target-card row labels/solver, and saved-gear storage):
 
 ```bash
 node test.js

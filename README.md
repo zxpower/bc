@@ -14,6 +14,12 @@ divided by the turret's click value at that distance:
 - 1 MRAD subtends `10 cm` per 100 m
 - Turret click default: `0.25 cm per 100 m` (configurable in *Turret settings*)
 
+In *Turret settings* you don't need to know the cm-per-100 m value. Pick the
+turret's **units** (MOA, MRAD or cm) and its **click value** (1/8, 1/4, 1/2 or
+1 MOA; 0.05, 0.1 or 0.2 MRAD; 1/4, 1/2 or 1 cm), or choose *Custom…* and type
+any value in those units. The app works out what one click moves at 100 m. For
+example, 1/4 MOA = 0.727 cm and 0.1 MRAD = 1 cm.
+
 **Example:** 4.6 MOA at 300 m
 - Drop = `4.6 × 2.908882 × 3 = 40.14 cm`
 - 1 click = `0.25 × 3 = 0.75 cm` at 300 m
@@ -88,7 +94,7 @@ equipment, so you can switch setups without retyping:
 | Kind | What it stores |
 | --- | --- |
 | **Rifle** | caliber, barrel twist, twist direction, sight height over bore, zero distance |
-| **Optic** | click value, clicks per mark, marks per turn, MRAD/MOA output units |
+| **Optic** | turret units + click value, clicks per mark, marks per turn, MRAD/MOA output units |
 | **Load** | bullet weight (grains or grams), muzzle velocity, BC + G1/G7 model, bullet length (optional) |
 
 Pick a profile from the dropdown to load it. The calculators and any tables
@@ -120,8 +126,8 @@ are skipped.
 
 ## Tests
 
-`test.js` extracts the app's `<script>` from `index.html` and runs 58 assertions
-against the pure functions (unit conversion, turret math, atmosphere, drag
+`test.js` extracts the app's `<script>` from `index.html` and runs 62 assertions
+against the pure functions (unit conversion, turret math and click presets, atmosphere, drag
 interpolation, Miller stability, spin drift, trajectory-solver behaviour, G1↔G7
 BC conversion, grain/gram weight, caliber presets, the target-card row labels/solver, and
 saved-gear storage and export/import):

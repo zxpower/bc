@@ -206,8 +206,21 @@
   <details>
     <summary>Turret settings</summary>
     <div class="advanced">
-      <label>Click value (cm per 100 m)</label>
-      <input id="clickCm" type="number" inputmode="decimal" value="0.25" min="0.01" step="0.01">
+      <label>Turret units</label>
+      <div class="toggle">
+        <button id="cuMoaBtn" onclick="setClickUnit('MOA')">MOA</button>
+        <button id="cuMradBtn" onclick="setClickUnit('MRAD')">MRAD</button>
+        <button id="cuCmBtn" class="active" onclick="setClickUnit('CM')">cm</button>
+      </div>
+      <label for="clickPreset">Click value</label>
+      <select id="clickPreset"></select>
+      <div id="clickCustomWrap" style="display:none">
+        <label for="clickCustom" id="clickCustomLabel">Custom click value</label>
+        <input id="clickCustom" type="number" inputmode="decimal" min="0" step="0.001">
+      </div>
+      <!-- Derived: what one click moves the impact at 100 m. The turret math reads this. -->
+      <input id="clickCm" type="hidden" value="0.25">
+      <div class="detail" id="clickHint"></div>
       <label>Clicks per numbered mark</label>
       <input id="clicksPerMark" type="number" inputmode="numeric" value="4" min="1" step="1">
       <label>Marks per full turn</label>
@@ -394,12 +407,14 @@ let dragModel = 'G7';    // matches default BC 0.243 (175gr SMK, G7)
 let twistDir = 'R';
 let trajUnit = 'MRAD';
 let weightUnit = 'GR';   // bullet weight entered in grains (GR) or grams (G)
-let caliberId = '308';   // preset from CALIBERS, or '' for a custom diameter
+let caliberId = '308';
+let clickUnit = 'CM';     // turret graduation: MOA, MRAD or CM (cm per 100 m)
+let clickPreset = '0.25'; // one of CLICK_PRESETS[clickUnit], or '' for a custom value   // preset from CALIBERS, or '' for a custom diameter
 
 const STATE_KEY = 'bc-state-v1';
 
 function saveState() {
-  const s = { elevUnit, windUnit, windDir, dragModel, twistDir, trajUnit, weightUnit, caliberId, targets, inputs: {} };
+  const s = { elevUnit, windUnit, windDir, dragModel, twistDir, trajUnit, weightUnit, caliberId, clickUnit, clickPreset, targets, inputs: {} };
   document.querySelectorAll('input').forEach(el => { if (el.id) s.inputs[el.id] = el.value; });
   try { localStorage.setItem(STATE_KEY, JSON.stringify(s)); } catch (e) { /* private mode */ }
   updateGearStatus();
@@ -422,6 +437,7 @@ function loadState() {
   if (s.weightUnit === 'GR' || s.weightUnit === 'G') weightUnit = s.weightUnit;
   // State saved before the caliber list existed only has a diameter: keep it as custom.
   if (s.caliberId === '' || caliberById(s.caliberId)) caliberId = s.caliberId;
+  if (!restoreClick(s.clickUnit, s.clickPreset) && s.inputs && s.inputs.clickCm) migrateClick(s.inputs.clickCm);
   else if (s.inputs && s.inputs.tCaliber) caliberId = '';
   if (Array.isArray(s.targets) && s.targets.length) targets = s.targets.map(v => String(v ?? ''));
 }
@@ -444,9 +460,99 @@ function syncToggles() {
   $('wGrBtn').classList.toggle('active', weightUnit === 'GR');
   $('wGBtn').classList.toggle('active', weightUnit === 'G');
   syncCaliber();
+  syncClick();
 }
 
 /* ---------------- Card 1: turret click calculator ---------------- */
+
+/* ---- Turret click value ----
+   Scopes are sold as "1/4 MOA" or "0.1 MRAD" per click; the turret math wants
+   what one click moves the impact at 100 m, in cm. Pick the turret units and the
+   click fraction (or type a custom one) and clickCm is derived from them. */
+const CLICK_PRESETS = {
+  MOA: [['0.125', '1/8 MOA'], ['0.25', '1/4 MOA'], ['0.5', '1/2 MOA'], ['1', '1 MOA']],
+  MRAD: [['0.05', '0.05 MRAD'], ['0.1', '0.1 MRAD'], ['0.2', '0.2 MRAD']],
+  CM: [['0.25', '1/4 cm'], ['0.5', '1/2 cm'], ['1', '1 cm']]
+};
+const CLICK_DEFAULT = { MOA: '0.25', MRAD: '0.1', CM: '0.25' };
+const CLICK_UNIT_LABEL = { MOA: 'MOA', MRAD: 'MRAD', CM: 'cm per 100 m' };
+
+const isClickPreset = (unit, v) => !!CLICK_PRESETS[unit] && CLICK_PRESETS[unit].some(([p]) => p === v);
+
+// cm at 100 m moved by one click, or NaN if the value is unusable.
+function clickCmFrom(unit, preset, custom) {
+  if (!CLICK_PRESETS[unit]) return NaN;
+  const v = parseFloat(preset !== '' ? preset : custom);
+  return v > 0 ? v * unitCm(unit, 100) : NaN;
+}
+
+// Apply a saved unit/preset pair; false if it isn't valid (caller then migrates).
+function restoreClick(unit, preset) {
+  if (!CLICK_PRESETS[unit] || !(preset === '' || isClickPreset(unit, preset))) return false;
+  clickUnit = unit;
+  clickPreset = preset;
+  return true;
+}
+
+// Data saved before turret units existed only has the cm value: keep it exactly.
+function migrateClick(cmStr) {
+  const v = parseFloat(cmStr);
+  clickUnit = 'CM';
+  const match = CLICK_PRESETS.CM.find(([p]) => Math.abs(parseFloat(p) - v) < 1e-9);
+  clickPreset = match ? match[0] : '';
+  if (!match && v > 0) $('clickCustom').value = String(v);
+}
+
+function clickLabel() {
+  const p = CLICK_PRESETS[clickUnit].find(([v]) => v === clickPreset);
+  return p ? p[1] : `${$('clickCustom').value} ${clickUnit === 'CM' ? 'cm' : clickUnit}`;
+}
+
+// Recompute clickCm from the turret settings and refresh their controls.
+function applyClick() {
+  const cm = clickCmFrom(clickUnit, clickPreset, $('clickCustom').value);
+  if (cm > 0) $('clickCm').value = Math.round(cm * 1e6) / 1e6;
+  syncClick();
+}
+
+function syncClick() {
+  $('cuMoaBtn').classList.toggle('active', clickUnit === 'MOA');
+  $('cuMradBtn').classList.toggle('active', clickUnit === 'MRAD');
+  $('cuCmBtn').classList.toggle('active', clickUnit === 'CM');
+  $('clickPreset').innerHTML = CLICK_PRESETS[clickUnit].map(([v, label]) =>
+    `<option value="${v}">${label}</option>`).join('') + '<option value="">Custom…</option>';
+  $('clickPreset').value = clickPreset;
+  $('clickCustomWrap').style.display = clickPreset === '' ? '' : 'none';
+  $('clickCustomLabel').textContent = `Custom click value (${CLICK_UNIT_LABEL[clickUnit]})`;
+  const cm = clickCmFrom(clickUnit, clickPreset, $('clickCustom').value);
+  $('clickHint').textContent = cm > 0
+    ? `1 click = ${+cm.toFixed(4)} cm at 100 m (${+(cm / MRAD_CM_PER_100M).toFixed(4)} MRAD · ${+(cm / MOA_CM_PER_100M).toFixed(4)} MOA)`
+    : 'Enter a click value.';
+}
+
+function clickChanged() {
+  applyClick();
+  calc();
+  saveState();
+  refreshAll();
+}
+
+function setClickUnit(u) {
+  if (u === clickUnit || !CLICK_PRESETS[u]) return;
+  clickUnit = u;
+  clickPreset = CLICK_DEFAULT[u];
+  clickChanged();
+}
+
+function setClickPreset(v) {
+  clickPreset = isClickPreset(clickUnit, v) ? v : '';
+  // Going custom: start from the current click, expressed in the turret's units.
+  if (clickPreset === '') {
+    const cm = parseFloat($('clickCm').value);
+    if (cm > 0) $('clickCustom').value = +(cm / unitCm(clickUnit, 100)).toFixed(4);
+  }
+  clickChanged();
+}
 
 // cm subtended at `dist` per 1 unit
 function unitCm(unit, dist) {
@@ -1153,10 +1259,14 @@ const GEAR_KINDS = {
   },
   optic: {
     title: 'Optic', plural: 'optics',
-    inputs: ['clickCm', 'clicksPerMark', 'marksPerTurn'],
-    read: () => ({ trajUnit }),
-    write: d => { if (d.trajUnit === 'MRAD' || d.trajUnit === 'MOA') trajUnit = d.trajUnit; },
-    suggest: () => `${$('clickCm').value} cm/100m scope`
+    inputs: ['clickCm', 'clickCustom', 'clicksPerMark', 'marksPerTurn'],
+    read: () => ({ clickUnit, clickPreset, trajUnit }),
+    write: d => {
+      if (d.trajUnit === 'MRAD' || d.trajUnit === 'MOA') trajUnit = d.trajUnit;
+      if (!restoreClick(d.clickUnit, d.clickPreset) && d.clickCm) migrateClick(d.clickCm);
+      applyClick();
+    },
+    suggest: () => `${clickLabel()} scope`
   },
   load: {
     // An ammo load: bullet weight, muzzle velocity, BC (+ optional length). The name is free text
@@ -1406,9 +1516,10 @@ $('gearRows').addEventListener('click', e => {
 
 /* ---------------- Wiring ---------------- */
 document.querySelectorAll('#card1 input').forEach(el => el.addEventListener('input', () => {
+  if (el.id === 'clickCustom') applyClick();
   calc();
   saveState();
-  if (['clickCm', 'clicksPerMark', 'marksPerTurn'].includes(el.id)) refreshAll();
+  if (['clickCustom', 'clicksPerMark', 'marksPerTurn'].includes(el.id)) refreshAll();
 }));
 document.querySelectorAll('#card2 input').forEach(el => el.addEventListener('input', () => {
   saveState();
@@ -1430,11 +1541,13 @@ $('targetRows').addEventListener('click', e => {
 });
 $('addTargetBtn').addEventListener('click', addTarget);
 $('tCaliberSel').addEventListener('change', e => setCaliber(e.target.value));
+$('clickPreset').addEventListener('change', e => setClickPreset(e.target.value));
 
 renderCaliberOptions();
 loadState();
 loadGear();
 syncToggles();
+applyClick();
 calc();
 renderTargetRows();
 renderGear();

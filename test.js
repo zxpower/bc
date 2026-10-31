@@ -264,7 +264,7 @@ test('active id pointing at a missing profile is cleared', () =>
   assert.strictEqual(sanitizeGear({ optic: { active: 'gone', items: [] } }).optic.active, null));
 test('each kind snapshots its own fields and toggle', () => {
   assert.deepStrictEqual(Object.keys(gearSnapshot('rifle')).sort(), ['caliberId', 'tCaliber', 'tSight', 'tTwist', 'tZero', 'twistDir']);
-  assert.deepStrictEqual(Object.keys(gearSnapshot('optic')).sort(), ['clickCm', 'clicksPerMark', 'marksPerTurn', 'trajUnit']);
+  assert.deepStrictEqual(Object.keys(gearSnapshot('optic')).sort(), ['clickCm', 'clickCustom', 'clickPreset', 'clickUnit', 'clicksPerMark', 'marksPerTurn', 'trajUnit']);
   assert.deepStrictEqual(Object.keys(gearSnapshot('load')).sort(), ['dragModel', 'tBc', 'tLength', 'tMv', 'tWeight', 'weightUnit']);
 });
 test('bullet weight: grains pass through, grams convert (11.34 g = 175 gr)', () => {
@@ -317,6 +317,33 @@ test('import rejects non-export JSON and drops malformed entries', () => {
   assert.strictEqual(mergeGear(emptyGear(), [1, 2]), null);
   const r = mergeGear(emptyGear(), { type: 'bc-gear', gear: { rifle: [null, { name: '' }, 'x', { name: 'ok', data: {} }], bogus: [{}] } });
   assert.strictEqual(r.added, 1);
+});
+test('click value per 100 m from turret units and fraction', () => {
+  approx(clickCmFrom('MOA', '0.25', ''), 0.72722, 1e-5);     // 1/4 MOA
+  approx(clickCmFrom('MOA', '0.125', ''), 0.36361, 1e-5);    // 1/8 MOA
+  approx(clickCmFrom('MRAD', '0.1', ''), 1, 1e-12);          // 0.1 MRAD = 1 cm
+  approx(clickCmFrom('MRAD', '0.05', ''), 0.5, 1e-12);
+  approx(clickCmFrom('CM', '0.25', ''), 0.25, 1e-12);        // the old default is unchanged
+  approx(clickCmFrom('MOA', '', '0.2'), 0.58178, 1e-5);      // custom
+  assert(isNaN(clickCmFrom('MOA', '', '')));
+  assert(isNaN(clickCmFrom('XYZ', '0.25', '')));
+});
+test('1/4 MOA turret dials 4 clicks per MOA of drop', () => {
+  const r = solve(4.6, 'MOA', 300, clickCmFrom('MOA', '0.25', ''));
+  assert.strictEqual(r.clicks, Math.round(4.6 * 4));
+});
+test('every turret unit has a default that is one of its presets', () => {
+  for (const u of Object.keys(CLICK_PRESETS)) assert(isClickPreset(u, CLICK_DEFAULT[u]), u);
+});
+test('saved click settings restore only when valid', () => {
+  assert.strictEqual(restoreClick('MRAD', '0.1'), true);
+  assert.strictEqual(clickUnit, 'MRAD');
+  assert.strictEqual(restoreClick('MRAD', ''), true);        // custom
+  assert.strictEqual(restoreClick('MRAD', '0.25'), false);   // not an MRAD preset
+  assert.strictEqual(restoreClick(undefined, undefined), false);
+  migrateClick('0.5');
+  assert.strictEqual(clickUnit, 'CM');
+  assert.strictEqual(clickPreset, '0.5');
 });
 test('no input field belongs to two kinds', () => {
   const all = Object.values(GEAR_KINDS).flatMap(k => k.inputs);

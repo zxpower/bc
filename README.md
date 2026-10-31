@@ -14,6 +14,12 @@ divided by the turret's click value at that distance:
 - 1 MRAD subtends `10 cm` per 100 m
 - Turret click default: `0.25 cm per 100 m` (configurable in *Turret settings*)
 
+In *Turret settings* you don't need to know the cm-per-100 m value. Pick the
+turret's **units** (MOA, MRAD or cm) and its **click value** (1/8, 1/4, 1/2 or
+1 MOA; 0.05, 0.1 or 0.2 MRAD; 1/4, 1/2 or 1 cm), or choose *Custom…* and type
+any value in those units. The app works out what one click moves at 100 m. For
+example, 1/4 MOA = 0.727 cm and 0.1 MRAD = 1 cm.
+
 **Example:** 4.6 MOA at 300 m
 - Drop = `4.6 × 2.908882 × 3 = 40.14 cm`
 - 1 click = `0.25 × 3 = 0.75 cm` at 300 m
@@ -27,9 +33,11 @@ A second section computes the whole trajectory from first principles instead of 
 single known drop. It's a 3-DOF point-mass solver using the standard **G1/G7**
 drag models:
 
-- **Bullet:** caliber, weight (grains), length (mm), muzzle velocity (m/s),
-  ballistic coefficient (G1 or G7)
-- **Rifle/scope:** zero distance, sight height over bore, barrel twist &
+- **Load:** bullet weight (grains or grams; the toggle converts in place),
+  muzzle velocity (m/s), ballistic coefficient (G1 or G7), bullet length (mm,
+  optional: only needed for stability and spin drift)
+- **Rifle/scope:** caliber (picked from a list of common cartridges, or a
+  custom bullet diameter in mm), zero distance, sight height over bore, barrel twist &
   twist direction (drives gyroscopic stability + spin drift)
 - **Atmosphere:** temperature, pressure, humidity (used for real air density)
 - **Wind:** speed + direction as a clock hour (12 = headwind, 3 = from the right)
@@ -78,12 +86,51 @@ windage clicks with the direction to dial, time of flight and remaining velocity
 Targets are kept in the order you entered them, and any distance the bullet can't
 reach is reported as *no solution* rather than silently estimated.
 
+## Saved gear
+
+The **Saved gear** card at the top stores named profiles for three kinds of
+equipment, so you can switch setups without retyping:
+
+| Kind | What it stores |
+| --- | --- |
+| **Rifle** | caliber, barrel twist, twist direction, sight height over bore, zero distance |
+| **Optic** | turret units + click value, clicks per mark, marks per turn, MRAD/MOA output units |
+| **Load** | bullet weight (grains or grams), muzzle velocity, BC + G1/G7 model, bullet length (optional) |
+
+Pick a profile from the dropdown to load it. The calculators and any tables
+already on screen recalculate straight away. **Save as…** stores the current
+values under a new name, **Save** overwrites the selected profile, and
+**Delete** removes it. If you edit a field after loading a profile, the card
+shows *Modified* until you save. Profiles are mixed and matched freely (any
+rifle + any optic + any load). A load is an ammo load, so its name is free text:
+the cartridge, bullet, lot number or anything else that identifies it. Its
+weight and BC are restored together with their unit and drag model, so they are
+never re-converted. Bullet length is optional: a load saved without it loads
+with the field empty, and stability and spin drift are skipped until you enter one.
+
+The caliber list covers common cartridges from .17 HMR to .50 BMG. Each one
+stores its real bullet diameter, which is what the stability calculation needs
+(".308 Win" and "7.62×51" are both a 0.308 in / 7.823 mm bullet). Pick
+*Custom diameter…* to type any other diameter in mm.
+
+Profiles live in the browser's `localStorage` (`bc-gear-v1`). They stay on this
+device and browser and are separate from the autosaved form state.
+
+**Export to file** downloads every saved profile as a JSON file
+(`bc-gear-YYYY-MM-DD.json`), and **Import from file** adds the profiles from such
+a file. Use these to back up your gear or move it to another browser or phone.
+Importing merges into what you already have: a profile whose name matches an
+existing one of the same kind (ignoring case) replaces it, and the rest are
+added. Files that aren't a saved-gear export are rejected, and malformed entries
+are skipped.
+
 ## Tests
 
-`test.js` extracts the app's `<script>` from `index.html` and runs 46 assertions
-against the pure functions (unit conversion, turret math, atmosphere, drag
+`test.js` extracts the app's `<script>` from `index.html` and runs 62 assertions
+against the pure functions (unit conversion, turret math and click presets, atmosphere, drag
 interpolation, Miller stability, spin drift, trajectory-solver behaviour, G1↔G7
-BC conversion, and the target-card row labels/solver):
+BC conversion, grain/gram weight, caliber presets, the target-card row labels/solver, and
+saved-gear storage and export/import):
 
 ```bash
 node test.js

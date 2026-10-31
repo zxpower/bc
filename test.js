@@ -233,6 +233,122 @@ test('crosswind target drifts to the correct side', () => {
   const s = solveShots({ ...CTX, p: { ...P, windZ: -4 }, sg: null }, [500], TURRET)[0];
   assert(s.windCm < 0 && s.side === 'L' && s.wClk > 0);
 });
+
+console.log('saved gear:');
+test('empty / garbage storage gives an empty store for every kind', () => {
+  for (const raw of [null, 'x', 42, [], { rifle: 'nope' }]) {
+    const g = sanitizeGear(raw);
+    assert.deepStrictEqual(Object.keys(g).sort(), ['load', 'optic', 'rifle']);
+    for (const k of Object.keys(g)) assert.deepStrictEqual(g[k], { items: [], active: null });
+  }
+});
+test('well-formed profiles survive, malformed ones are dropped', () => {
+  const g = sanitizeGear({
+    load: {
+      active: 'a',
+      items: [
+        { id: 'a', name: ' 175 SMK ', data: { tBc: '0.243', dragModel: 'G7', tMv: 800, evil: { x: 1 } } },
+        { id: 'a', name: 'dup id', data: {} },
+        { id: 'b', name: '', data: {} },
+        { id: 'c', name: 'no data' },
+        null
+      ]
+    }
+  });
+  assert.strictEqual(g.load.items.length, 1);
+  assert.strictEqual(g.load.items[0].name, '175 SMK');
+  assert.deepStrictEqual(g.load.items[0].data, { tBc: '0.243', dragModel: 'G7', tMv: '800' });
+  assert.strictEqual(g.load.active, 'a');
+});
+test('active id pointing at a missing profile is cleared', () =>
+  assert.strictEqual(sanitizeGear({ optic: { active: 'gone', items: [] } }).optic.active, null));
+test('each kind snapshots its own fields and toggle', () => {
+  assert.deepStrictEqual(Object.keys(gearSnapshot('rifle')).sort(), ['caliberId', 'tCaliber', 'tSight', 'tTwist', 'tZero', 'twistDir']);
+  assert.deepStrictEqual(Object.keys(gearSnapshot('optic')).sort(), ['clickCm', 'clickCustom', 'clickPreset', 'clickUnit', 'clicksPerMark', 'marksPerTurn', 'trajUnit']);
+  assert.deepStrictEqual(Object.keys(gearSnapshot('load')).sort(), ['dragModel', 'tBc', 'tLength', 'tMv', 'tWeight', 'weightUnit']);
+});
+test('bullet weight: grains pass through, grams convert (11.34 g = 175 gr)', () => {
+  assert.strictEqual(weightGrains(175, 'GR'), 175);
+  approx(weightGrains(11.34, 'G'), 175, 0.05);
+  approx(weightGrains(1, 'G'), 15.432, 0.001);
+});
+test('caliber presets: unique ids, sane diameters, sorted small to large', () => {
+  assert.strictEqual(new Set(CALIBERS.map(c => c.id)).size, CALIBERS.length);
+  for (const c of CALIBERS) assert(c.inch > 0.15 && c.inch < 0.6 && c.name, c.id);
+  for (let i = 1; i < CALIBERS.length; i++) assert(CALIBERS[i].inch >= CALIBERS[i - 1].inch, CALIBERS[i].id);
+});
+test('.308 Win preset is a 7.823 mm bullet; 6.5 CM is 6.706 mm', () => {
+  approx(caliberById('308').mm, 7.823, 1e-9);
+  approx(caliberById('65cm').mm, 6.706, 1e-9);
+  assert.strictEqual(caliberById('nope'), null);
+  assert.strictEqual(caliberById(''), null);
+});
+test('preset diameter feeds Miller Sg the same as typing inches', () => {
+  const c = caliberById('308');
+  approx(millerSg(175, c.mm / 25.4, 1.24, 11.25, 2800, 59, 29.92),
+         millerSg(175, 0.308, 1.24, 11.25, 2800, 59, 29.92), 1e-3);
+});
+test('export round-trips through import into an empty store', () => {
+  gear = sanitizeGear({ rifle: { active: 'r1', items: [{ id: 'r1', name: 'Tikka', data: { tTwist: '8', caliberId: '65cm' } }] },
+                        load: { items: [{ id: 'l1', name: 'ELD-M 140', data: { tWeight: '140', tLength: '' } }] } });
+  const file = JSON.parse(JSON.stringify(gearExportData()));
+  assert.strictEqual(file.type, 'bc-gear');
+  assert(!('id' in file.gear.rifle[0]), 'ids are not exported');
+  const r = mergeGear(emptyGear(), file);
+  assert.strictEqual(r.added, 2);
+  assert.strictEqual(r.replaced, 0);
+  assert.deepStrictEqual(r.gear.rifle.items[0].data, { tTwist: '8', caliberId: '65cm' });
+  assert.deepStrictEqual(r.gear.load.items[0].data, { tWeight: '140', tLength: '' });
+});
+test('import replaces same-named profiles (any case) and keeps their id', () => {
+  const cur = sanitizeGear({ optic: { active: 'o1', items: [{ id: 'o1', name: 'PMII', data: { clickCm: '1' } }] } });
+  const r = mergeGear(cur, { type: 'bc-gear', version: 1, gear: { optic: [
+    { name: 'pmii', data: { clickCm: '0.25' } }, { name: 'Vortex', data: { clickCm: '1' } }] } });
+  assert.strictEqual(r.added, 1);
+  assert.strictEqual(r.replaced, 1);
+  const pm = r.gear.optic.items.find(x => x.id === 'o1');
+  assert.strictEqual(pm.data.clickCm, '0.25');
+  assert.strictEqual(r.gear.optic.active, 'o1');
+  assert.strictEqual(cur.optic.items[0].data.clickCm, '1', 'input store untouched');
+});
+test('import rejects non-export JSON and drops malformed entries', () => {
+  assert.strictEqual(mergeGear(emptyGear(), null), null);
+  assert.strictEqual(mergeGear(emptyGear(), { gear: {} }), null);
+  assert.strictEqual(mergeGear(emptyGear(), [1, 2]), null);
+  const r = mergeGear(emptyGear(), { type: 'bc-gear', gear: { rifle: [null, { name: '' }, 'x', { name: 'ok', data: {} }], bogus: [{}] } });
+  assert.strictEqual(r.added, 1);
+});
+test('click value per 100 m from turret units and fraction', () => {
+  approx(clickCmFrom('MOA', '0.25', ''), 0.72722, 1e-5);     // 1/4 MOA
+  approx(clickCmFrom('MOA', '0.125', ''), 0.36361, 1e-5);    // 1/8 MOA
+  approx(clickCmFrom('MRAD', '0.1', ''), 1, 1e-12);          // 0.1 MRAD = 1 cm
+  approx(clickCmFrom('MRAD', '0.05', ''), 0.5, 1e-12);
+  approx(clickCmFrom('CM', '0.25', ''), 0.25, 1e-12);        // the old default is unchanged
+  approx(clickCmFrom('MOA', '', '0.2'), 0.58178, 1e-5);      // custom
+  assert(isNaN(clickCmFrom('MOA', '', '')));
+  assert(isNaN(clickCmFrom('XYZ', '0.25', '')));
+});
+test('1/4 MOA turret dials 4 clicks per MOA of drop', () => {
+  const r = solve(4.6, 'MOA', 300, clickCmFrom('MOA', '0.25', ''));
+  assert.strictEqual(r.clicks, Math.round(4.6 * 4));
+});
+test('every turret unit has a default that is one of its presets', () => {
+  for (const u of Object.keys(CLICK_PRESETS)) assert(isClickPreset(u, CLICK_DEFAULT[u]), u);
+});
+test('saved click settings restore only when valid', () => {
+  assert.strictEqual(restoreClick('MRAD', '0.1'), true);
+  assert.strictEqual(clickUnit, 'MRAD');
+  assert.strictEqual(restoreClick('MRAD', ''), true);        // custom
+  assert.strictEqual(restoreClick('MRAD', '0.25'), false);   // not an MRAD preset
+  assert.strictEqual(restoreClick(undefined, undefined), false);
+  migrateClick('0.5');
+  assert.strictEqual(clickUnit, 'CM');
+  assert.strictEqual(clickPreset, '0.5');
+});
+test('no input field belongs to two kinds', () => {
+  const all = Object.values(GEAR_KINDS).flatMap(k => k.inputs);
+  assert.strictEqual(new Set(all).size, all.length);
+});
 `;
 
 eval(src + suite);

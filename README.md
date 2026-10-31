@@ -110,13 +110,21 @@ stores its real bullet diameter, which is what the stability calculation needs
 Profiles live in the browser's `localStorage` (`bc-gear-v1`). They stay on this
 device and browser and are separate from the autosaved form state.
 
+**Export to file** downloads every saved profile as a JSON file
+(`bc-gear-YYYY-MM-DD.json`), and **Import from file** adds the profiles from such
+a file. Use these to back up your gear or move it to another browser or phone.
+Importing merges into what you already have: a profile whose name matches an
+existing one of the same kind (ignoring case) replaces it, and the rest are
+added. Files that aren't a saved-gear export are rejected, and malformed entries
+are skipped.
+
 ## Tests
 
-`test.js` extracts the app's `<script>` from `index.html` and runs 55 assertions
+`test.js` extracts the app's `<script>` from `index.html` and runs 58 assertions
 against the pure functions (unit conversion, turret math, atmosphere, drag
 interpolation, Miller stability, spin drift, trajectory-solver behaviour, G1↔G7
 BC conversion, grain/gram weight, caliber presets, the target-card row labels/solver, and
-saved-gear storage):
+saved-gear storage and export/import):
 
 ```bash
 node test.js

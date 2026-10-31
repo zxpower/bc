@@ -139,6 +139,8 @@
   .gear-btns button:disabled { opacity: .3; cursor: not-allowed; }
   .gear-status { font-size: 12px; color: var(--muted); margin-top: 6px; min-height: 1em; }
   .gear-status.mod { color: var(--warn); }
+  .gear-status.err { color: var(--danger); }
+  .gear-io { margin-top: 18px; max-width: 420px; }
   @media (max-width: 700px) { .gear-grid { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -146,8 +148,14 @@
 <div class="card wide" id="gearCard">
   <h1>Saved gear</h1>
   <div class="sub">Save rifles, optics and ammo loads by name and switch between them.
-    Stored in this browser only.</div>
+    Stored in this browser — export to a file to back up or move to another device.</div>
   <div class="gear-grid" id="gearRows"></div>
+  <div class="gear-btns gear-io">
+    <button id="gearExportBtn" title="Download all saved gear as a JSON file">Export to file</button>
+    <button id="gearImportBtn" title="Add profiles from a JSON file; same-named ones are replaced">Import from file</button>
+    <input id="gearImportFile" type="file" accept=".json,application/json" hidden>
+  </div>
+  <div class="gear-status" id="gearMsg"></div>
 </div>
 
 <div class="card" id="card1">
@@ -1300,6 +1308,85 @@ function gearDelete(kind) {
   saveGear();
   renderGear();
 }
+
+/* ---- Export / import ---- */
+const GEAR_FILE_TYPE = 'bc-gear';
+
+function gearExportData() {
+  const out = { type: GEAR_FILE_TYPE, version: 1, exported: new Date().toISOString(), gear: {} };
+  for (const kind of Object.keys(GEAR_KINDS)) {
+    out.gear[kind] = gear[kind].items.map(({ name, data }) => ({ name, data }));
+  }
+  return out;
+}
+
+// Merge imported profiles into `current` by name (case-insensitive) per kind:
+// a same-named profile keeps its id but takes the imported values, others are added.
+// Pure: returns a new store plus counts, leaves `current` untouched.
+function mergeGear(current, file) {
+  if (!file || typeof file !== 'object') return null;
+  if (file.type !== GEAR_FILE_TYPE || !file.gear || typeof file.gear !== 'object') return null;
+  // The file lists profiles without ids; give each a placeholder so sanitizeGear keeps it.
+  const raw = {};
+  for (const kind of Object.keys(GEAR_KINDS)) {
+    const list = Array.isArray(file.gear[kind]) ? file.gear[kind] : [];
+    raw[kind] = { items: list.map((it, i) => ({ ...(it && typeof it === 'object' ? it : {}), id: 'imp' + i })) };
+  }
+  const incoming = sanitizeGear(raw);
+  const next = JSON.parse(JSON.stringify(current));
+  let added = 0, replaced = 0;
+  for (const kind of Object.keys(GEAR_KINDS)) {
+    const g = next[kind];
+    for (const it of incoming[kind].items) {
+      const same = g.items.find(x => x.name.toLowerCase() === it.name.toLowerCase());
+      if (same) { same.data = it.data; replaced++; }
+      else { g.items.push({ id: gearId(), name: it.name, data: it.data }); added++; }
+    }
+    g.items.sort((a, b) => a.name.localeCompare(b.name));
+  }
+  return { gear: next, added, replaced };
+}
+
+function gearMessage(text, isErr) {
+  const el = $('gearMsg');
+  el.textContent = text;
+  el.classList.toggle('err', !!isErr);
+}
+
+function gearExport() {
+  const n = Object.values(gear).reduce((sum, g) => sum + g.items.length, 0);
+  if (!n) return gearMessage('Nothing to export yet — save a rifle, optic or load first.', true);
+  const blob = new Blob([JSON.stringify(gearExportData(), null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `bc-gear-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  gearMessage(`Exported ${n} profile${n !== 1 ? 's' : ''}.`);
+}
+
+function gearImportText(text) {
+  let file;
+  try { file = JSON.parse(text); } catch (e) { file = null; }
+  const r = mergeGear(gear, file);
+  if (!r) return gearMessage('That file is not a saved-gear export.', true);
+  if (!r.added && !r.replaced) return gearMessage('No usable profiles found in that file.', true);
+  gear = r.gear;
+  saveGear();
+  renderGear();
+  gearMessage(`Imported: ${r.added} added, ${r.replaced} replaced.`);
+}
+
+$('gearExportBtn').addEventListener('click', gearExport);
+$('gearImportBtn').addEventListener('click', () => $('gearImportFile').click());
+$('gearImportFile').addEventListener('change', e => {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';   // allow re-importing the same file
+  if (!f) return;
+  f.text().then(gearImportText, () => gearMessage('Could not read that file.', true));
+});
 
 $('gearRows').addEventListener('change', e => {
   const box = e.target.closest ? e.target.closest('[data-kind]') : null;

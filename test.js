@@ -288,6 +288,36 @@ test('preset diameter feeds Miller Sg the same as typing inches', () => {
   approx(millerSg(175, c.mm / 25.4, 1.24, 11.25, 2800, 59, 29.92),
          millerSg(175, 0.308, 1.24, 11.25, 2800, 59, 29.92), 1e-3);
 });
+test('export round-trips through import into an empty store', () => {
+  gear = sanitizeGear({ rifle: { active: 'r1', items: [{ id: 'r1', name: 'Tikka', data: { tTwist: '8', caliberId: '65cm' } }] },
+                        load: { items: [{ id: 'l1', name: 'ELD-M 140', data: { tWeight: '140', tLength: '' } }] } });
+  const file = JSON.parse(JSON.stringify(gearExportData()));
+  assert.strictEqual(file.type, 'bc-gear');
+  assert(!('id' in file.gear.rifle[0]), 'ids are not exported');
+  const r = mergeGear(emptyGear(), file);
+  assert.strictEqual(r.added, 2);
+  assert.strictEqual(r.replaced, 0);
+  assert.deepStrictEqual(r.gear.rifle.items[0].data, { tTwist: '8', caliberId: '65cm' });
+  assert.deepStrictEqual(r.gear.load.items[0].data, { tWeight: '140', tLength: '' });
+});
+test('import replaces same-named profiles (any case) and keeps their id', () => {
+  const cur = sanitizeGear({ optic: { active: 'o1', items: [{ id: 'o1', name: 'PMII', data: { clickCm: '1' } }] } });
+  const r = mergeGear(cur, { type: 'bc-gear', version: 1, gear: { optic: [
+    { name: 'pmii', data: { clickCm: '0.25' } }, { name: 'Vortex', data: { clickCm: '1' } }] } });
+  assert.strictEqual(r.added, 1);
+  assert.strictEqual(r.replaced, 1);
+  const pm = r.gear.optic.items.find(x => x.id === 'o1');
+  assert.strictEqual(pm.data.clickCm, '0.25');
+  assert.strictEqual(r.gear.optic.active, 'o1');
+  assert.strictEqual(cur.optic.items[0].data.clickCm, '1', 'input store untouched');
+});
+test('import rejects non-export JSON and drops malformed entries', () => {
+  assert.strictEqual(mergeGear(emptyGear(), null), null);
+  assert.strictEqual(mergeGear(emptyGear(), { gear: {} }), null);
+  assert.strictEqual(mergeGear(emptyGear(), [1, 2]), null);
+  const r = mergeGear(emptyGear(), { type: 'bc-gear', gear: { rifle: [null, { name: '' }, 'x', { name: 'ok', data: {} }], bogus: [{}] } });
+  assert.strictEqual(r.added, 1);
+});
 test('no input field belongs to two kinds', () => {
   const all = Object.values(GEAR_KINDS).flatMap(k => k.inputs);
   assert.strictEqual(new Set(all).size, all.length);

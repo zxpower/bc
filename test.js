@@ -263,14 +263,30 @@ test('well-formed profiles survive, malformed ones are dropped', () => {
 test('active id pointing at a missing profile is cleared', () =>
   assert.strictEqual(sanitizeGear({ optic: { active: 'gone', items: [] } }).optic.active, null));
 test('each kind snapshots its own fields and toggle', () => {
-  assert.deepStrictEqual(Object.keys(gearSnapshot('rifle')).sort(), ['tCaliber', 'tSight', 'tTwist', 'tZero', 'twistDir']);
+  assert.deepStrictEqual(Object.keys(gearSnapshot('rifle')).sort(), ['caliberId', 'tCaliber', 'tSight', 'tTwist', 'tZero', 'twistDir']);
   assert.deepStrictEqual(Object.keys(gearSnapshot('optic')).sort(), ['clickCm', 'clicksPerMark', 'marksPerTurn', 'trajUnit']);
-  assert.deepStrictEqual(Object.keys(gearSnapshot('load')).sort(), ['dragModel', 'tBc', 'tMv', 'tWeight', 'weightUnit']);
+  assert.deepStrictEqual(Object.keys(gearSnapshot('load')).sort(), ['dragModel', 'tBc', 'tLength', 'tMv', 'tWeight', 'weightUnit']);
 });
 test('bullet weight: grains pass through, grams convert (11.34 g = 175 gr)', () => {
   assert.strictEqual(weightGrains(175, 'GR'), 175);
   approx(weightGrains(11.34, 'G'), 175, 0.05);
   approx(weightGrains(1, 'G'), 15.432, 0.001);
+});
+test('caliber presets: unique ids, sane diameters, sorted small to large', () => {
+  assert.strictEqual(new Set(CALIBERS.map(c => c.id)).size, CALIBERS.length);
+  for (const c of CALIBERS) assert(c.inch > 0.15 && c.inch < 0.6 && c.name, c.id);
+  for (let i = 1; i < CALIBERS.length; i++) assert(CALIBERS[i].inch >= CALIBERS[i - 1].inch, CALIBERS[i].id);
+});
+test('.308 Win preset is a 7.823 mm bullet; 6.5 CM is 6.706 mm', () => {
+  approx(caliberById('308').mm, 7.823, 1e-9);
+  approx(caliberById('65cm').mm, 6.706, 1e-9);
+  assert.strictEqual(caliberById('nope'), null);
+  assert.strictEqual(caliberById(''), null);
+});
+test('preset diameter feeds Miller Sg the same as typing inches', () => {
+  const c = caliberById('308');
+  approx(millerSg(175, c.mm / 25.4, 1.24, 11.25, 2800, 59, 29.92),
+         millerSg(175, 0.308, 1.24, 11.25, 2800, 59, 29.92), 1e-3);
 });
 test('no input field belongs to two kinds', () => {
   const all = Object.values(GEAR_KINDS).flatMap(k => k.inputs);

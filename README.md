@@ -28,8 +28,10 @@ single known drop. It's a 3-DOF point-mass solver using the standard **G1/G7**
 drag models:
 
 - **Load:** bullet weight (grains or grams; the toggle converts in place),
-  muzzle velocity (m/s), ballistic coefficient (G1 or G7), bullet length (mm)
-- **Rifle/scope:** caliber, zero distance, sight height over bore, barrel twist &
+  muzzle velocity (m/s), ballistic coefficient (G1 or G7), bullet length (mm,
+  optional: only needed for stability and spin drift)
+- **Rifle/scope:** caliber (picked from a list of common cartridges, or a
+  custom bullet diameter in mm), zero distance, sight height over bore, barrel twist &
   twist direction (drives gyroscopic stability + spin drift)
 - **Atmosphere:** temperature, pressure, humidity (used for real air density)
 - **Wind:** speed + direction as a clock hour (12 = headwind, 3 = from the right)
@@ -87,7 +89,7 @@ equipment, so you can switch setups without retyping:
 | --- | --- |
 | **Rifle** | caliber, barrel twist, twist direction, sight height over bore, zero distance |
 | **Optic** | click value, clicks per mark, marks per turn, MRAD/MOA output units |
-| **Load** | bullet weight (grains or grams), muzzle velocity, BC + G1/G7 model |
+| **Load** | bullet weight (grains or grams), muzzle velocity, BC + G1/G7 model, bullet length (optional) |
 
 Pick a profile from the dropdown to load it. The calculators and any tables
 already on screen recalculate straight away. **Save as…** stores the current
@@ -97,17 +99,23 @@ shows *Modified* until you save. Profiles are mixed and matched freely (any
 rifle + any optic + any load). A load is an ammo load, so its name is free text:
 the cartridge, bullet, lot number or anything else that identifies it. Its
 weight and BC are restored together with their unit and drag model, so they are
-never re-converted.
+never re-converted. Bullet length is optional: a load saved without it loads
+with the field empty, and stability and spin drift are skipped until you enter one.
+
+The caliber list covers common cartridges from .17 HMR to .50 BMG. Each one
+stores its real bullet diameter, which is what the stability calculation needs
+(".308 Win" and "7.62×51" are both a 0.308 in / 7.823 mm bullet). Pick
+*Custom diameter…* to type any other diameter in mm.
 
 Profiles live in the browser's `localStorage` (`bc-gear-v1`). They stay on this
 device and browser and are separate from the autosaved form state.
 
 ## Tests
 
-`test.js` extracts the app's `<script>` from `index.html` and runs 52 assertions
+`test.js` extracts the app's `<script>` from `index.html` and runs 55 assertions
 against the pure functions (unit conversion, turret math, atmosphere, drag
 interpolation, Miller stability, spin drift, trajectory-solver behaviour, G1↔G7
-BC conversion, grain/gram weight, the target-card row labels/solver, and
+BC conversion, grain/gram weight, caliber presets, the target-card row labels/solver, and
 saved-gear storage):
 
 ```bash

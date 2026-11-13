@@ -125,9 +125,39 @@
   footer .credit { font-size: 13px; margin: 0; }
   footer a { color: var(--accent); text-decoration: none; }
   footer a:hover { text-decoration: underline; }
+  .gear-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .gear-grid > div { min-width: 0; }
+  .gear-grid label { margin-top: 0; }
+  .gear-btns { display: flex; gap: 6px; margin-top: 8px; }
+  .gear-btns button {
+    flex: 1; padding: 8px 6px; border-radius: 8px; cursor: pointer;
+    background: #0e1116; border: 1px solid var(--border); color: var(--muted);
+    font-size: 13px; font-weight: 600;
+  }
+  .gear-btns button:hover { color: var(--text); border-color: var(--accent); }
+  .gear-btns button.danger:hover { color: var(--danger); border-color: var(--danger); }
+  .gear-btns button:disabled { opacity: .3; cursor: not-allowed; }
+  .gear-status { font-size: 12px; color: var(--muted); margin-top: 6px; min-height: 1em; }
+  .gear-status.mod { color: var(--warn); }
+  .gear-status.err { color: var(--danger); }
+  .gear-io { margin-top: 18px; max-width: 420px; }
+  @media (max-width: 700px) { .gear-grid { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
+<div class="card wide" id="gearCard">
+  <h1>Saved gear</h1>
+  <div class="sub">Save rifles, optics and ammo loads by name and switch between them.
+    Stored in this browser — export to a file to back up or move to another device.</div>
+  <div class="gear-grid" id="gearRows"></div>
+  <div class="gear-btns gear-io">
+    <button id="gearExportBtn" title="Download all saved gear as a JSON file">Export to file</button>
+    <button id="gearImportBtn" title="Add profiles from a JSON file; same-named ones are replaced">Import from file</button>
+    <input id="gearImportFile" type="file" accept=".json,application/json" hidden>
+  </div>
+  <div class="gear-status" id="gearMsg"></div>
+</div>
+
 <div class="card" id="card1">
   <h1>Ballistic Turret Calculator</h1>
   <div class="sub">How many clicks to dial for a given drop &amp; distance.</div>
@@ -176,8 +206,21 @@
   <details>
     <summary>Turret settings</summary>
     <div class="advanced">
-      <label>Click value (cm per 100 m)</label>
-      <input id="clickCm" type="number" inputmode="decimal" value="0.25" min="0.01" step="0.01">
+      <label>Turret units</label>
+      <div class="toggle">
+        <button id="cuMoaBtn" onclick="setClickUnit('MOA')">MOA</button>
+        <button id="cuMradBtn" onclick="setClickUnit('MRAD')">MRAD</button>
+        <button id="cuCmBtn" class="active" onclick="setClickUnit('CM')">cm</button>
+      </div>
+      <label for="clickPreset">Click value</label>
+      <select id="clickPreset"></select>
+      <div id="clickCustomWrap" style="display:none">
+        <label for="clickCustom" id="clickCustomLabel">Custom click value</label>
+        <input id="clickCustom" type="number" inputmode="decimal" min="0" step="0.001">
+      </div>
+      <!-- Derived: what one click moves the impact at 100 m. The turret math reads this. -->
+      <input id="clickCm" type="hidden" value="0.25">
+      <div class="detail" id="clickHint"></div>
       <label>Clicks per numbered mark</label>
       <input id="clicksPerMark" type="number" inputmode="numeric" value="4" min="1" step="1">
       <label>Marks per full turn</label>
@@ -190,19 +233,25 @@
   <h1>Full Trajectory Calculator</h1>
   <div class="sub">Point-mass solver (G1/G7 drag) — produces a drop &amp; wind table with scope adjustments.</div>
 
-  <div class="section-title">Bullet</div>
+  <div class="section-title">Load</div>
   <div class="grid3">
     <div>
-      <label>Caliber (mm)</label>
-      <input id="tCaliber" type="number" inputmode="decimal" value="7.62" min="0" step="0.01">
-    </div>
-    <div>
-      <label>Weight (grains)</label>
-      <input id="tWeight" type="number" inputmode="decimal" value="175" min="0" step="1">
+      <label>Bullet weight</label>
+      <div class="row">
+        <div><input id="tWeight" type="number" inputmode="decimal" value="175" min="0" step="1"></div>
+        <div class="toggle" style="flex:0 0 96px;margin-top:0">
+          <button id="wGrBtn" class="active" onclick="setWeightUnit('GR')">gr</button>
+          <button id="wGBtn" onclick="setWeightUnit('G')">g</button>
+        </div>
+      </div>
     </div>
     <div>
       <label>Muzzle velocity (m/s)</label>
       <input id="tMv" type="number" inputmode="decimal" value="800" min="0" step="1">
+    </div>
+    <div>
+      <label>Bullet length (mm, optional)</label>
+      <input id="tLength" type="number" inputmode="decimal" value="32.8" min="0" step="0.1" placeholder="for stability">
     </div>
   </div>
   <div class="grid2" style="margin-top:10px">
@@ -220,19 +269,23 @@
     </div>
   </div>
 
-  <div class="grid2" style="margin-top:10px">
+  <div class="section-title">Rifle &amp; scope</div>
+  <div class="grid2">
     <div>
-      <label>Bullet length (mm)</label>
-      <input id="tLength" type="number" inputmode="decimal" value="32.8" min="0" step="0.1">
+      <label for="tCaliberSel">Caliber</label>
+      <select id="tCaliberSel"></select>
+      <div id="tCaliberCustom" style="display:none">
+        <label for="tCaliber">Bullet diameter (mm)</label>
+        <input id="tCaliber" type="number" inputmode="decimal" value="7.823" min="0" step="0.001">
+      </div>
+      <div class="detail" id="tCaliberHint"></div>
     </div>
     <div>
       <label>Barrel twist (1 turn in … in)</label>
       <input id="tTwist" type="number" inputmode="decimal" value="11" min="0" step="0.5">
     </div>
   </div>
-
-  <div class="section-title">Rifle &amp; scope</div>
-  <div class="grid2">
+  <div class="grid2" style="margin-top:10px">
     <div>
       <label>Zero distance (m)</label>
       <input id="tZero" type="number" inputmode="decimal" value="100" min="1" step="1">
@@ -353,13 +406,18 @@ let windDir = 'L';
 let dragModel = 'G7';    // matches default BC 0.243 (175gr SMK, G7)
 let twistDir = 'R';
 let trajUnit = 'MRAD';
+let weightUnit = 'GR';   // bullet weight entered in grains (GR) or grams (G)
+let caliberId = '308';   // preset from CALIBERS, or '' for a custom diameter
+let clickUnit = 'CM';     // turret graduation: MOA, MRAD or CM (cm per 100 m)
+let clickPreset = '0.25'; // one of CLICK_PRESETS[clickUnit], or '' for a custom value
 
 const STATE_KEY = 'bc-state-v1';
 
 function saveState() {
-  const s = { elevUnit, windUnit, windDir, dragModel, twistDir, trajUnit, targets, inputs: {} };
+  const s = { elevUnit, windUnit, windDir, dragModel, twistDir, trajUnit, weightUnit, caliberId, clickUnit, clickPreset, targets, inputs: {} };
   document.querySelectorAll('input').forEach(el => { if (el.id) s.inputs[el.id] = el.value; });
   try { localStorage.setItem(STATE_KEY, JSON.stringify(s)); } catch (e) { /* private mode */ }
+  updateGearStatus();
 }
 
 function loadState() {
@@ -376,6 +434,11 @@ function loadState() {
   dragModel = s.dragModel || dragModel;
   twistDir = s.twistDir || twistDir;
   trajUnit = s.trajUnit || trajUnit;
+  if (s.weightUnit === 'GR' || s.weightUnit === 'G') weightUnit = s.weightUnit;
+  // State saved before the caliber list existed only has a diameter: keep it as custom.
+  if (s.caliberId === '' || caliberById(s.caliberId)) caliberId = s.caliberId;
+  else if (s.inputs && s.inputs.tCaliber) caliberId = '';
+  if (!restoreClick(s.clickUnit, s.clickPreset) && s.inputs && s.inputs.clickCm) migrateClick(s.inputs.clickCm);
   if (Array.isArray(s.targets) && s.targets.length) targets = s.targets.map(v => String(v ?? ''));
 }
 
@@ -394,9 +457,102 @@ function syncToggles() {
   $('twLBtn').classList.toggle('active', twistDir === 'L');
   $('tuMradBtn').classList.toggle('active', trajUnit === 'MRAD');
   $('tuMoaBtn').classList.toggle('active', trajUnit === 'MOA');
+  $('wGrBtn').classList.toggle('active', weightUnit === 'GR');
+  $('wGBtn').classList.toggle('active', weightUnit === 'G');
+  syncCaliber();
+  syncClick();
 }
 
 /* ---------------- Card 1: turret click calculator ---------------- */
+
+/* ---- Turret click value ----
+   Scopes are sold as "1/4 MOA" or "0.1 MRAD" per click; the turret math wants
+   what one click moves the impact at 100 m, in cm. Pick the turret units and the
+   click fraction (or type a custom one) and clickCm is derived from them. */
+const CLICK_PRESETS = {
+  MOA: [['0.125', '1/8 MOA'], ['0.25', '1/4 MOA'], ['0.5', '1/2 MOA'], ['1', '1 MOA']],
+  MRAD: [['0.05', '0.05 MRAD'], ['0.1', '0.1 MRAD'], ['0.2', '0.2 MRAD']],
+  CM: [['0.25', '1/4 cm'], ['0.5', '1/2 cm'], ['1', '1 cm']]
+};
+const CLICK_DEFAULT = { MOA: '0.25', MRAD: '0.1', CM: '0.25' };
+const CLICK_UNIT_LABEL = { MOA: 'MOA', MRAD: 'MRAD', CM: 'cm per 100 m' };
+
+const isClickPreset = (unit, v) => !!CLICK_PRESETS[unit] && CLICK_PRESETS[unit].some(([p]) => p === v);
+
+// cm at 100 m moved by one click, or NaN if the value is unusable.
+function clickCmFrom(unit, preset, custom) {
+  if (!CLICK_PRESETS[unit]) return NaN;
+  const v = parseFloat(preset !== '' ? preset : custom);
+  return v > 0 ? v * unitCm(unit, 100) : NaN;
+}
+
+// Apply a saved unit/preset pair; false if it isn't valid (caller then migrates).
+function restoreClick(unit, preset) {
+  if (!CLICK_PRESETS[unit] || !(preset === '' || isClickPreset(unit, preset))) return false;
+  clickUnit = unit;
+  clickPreset = preset;
+  return true;
+}
+
+// Data saved before turret units existed only has the cm value: keep it exactly.
+function migrateClick(cmStr) {
+  const v = parseFloat(cmStr);
+  clickUnit = 'CM';
+  const match = CLICK_PRESETS.CM.find(([p]) => Math.abs(parseFloat(p) - v) < 1e-9);
+  clickPreset = match ? match[0] : '';
+  if (!match && v > 0) $('clickCustom').value = String(v);
+}
+
+function clickLabel() {
+  const p = CLICK_PRESETS[clickUnit].find(([v]) => v === clickPreset);
+  return p ? p[1] : `${$('clickCustom').value} ${clickUnit === 'CM' ? 'cm' : clickUnit}`;
+}
+
+// Recompute clickCm from the turret settings and refresh their controls.
+function applyClick() {
+  const cm = clickCmFrom(clickUnit, clickPreset, $('clickCustom').value);
+  if (cm > 0) $('clickCm').value = Math.round(cm * 1e6) / 1e6;
+  syncClick();
+}
+
+function syncClick() {
+  $('cuMoaBtn').classList.toggle('active', clickUnit === 'MOA');
+  $('cuMradBtn').classList.toggle('active', clickUnit === 'MRAD');
+  $('cuCmBtn').classList.toggle('active', clickUnit === 'CM');
+  $('clickPreset').innerHTML = CLICK_PRESETS[clickUnit].map(([v, label]) =>
+    `<option value="${v}">${label}</option>`).join('') + '<option value="">Custom…</option>';
+  $('clickPreset').value = clickPreset;
+  $('clickCustomWrap').style.display = clickPreset === '' ? '' : 'none';
+  $('clickCustomLabel').textContent = `Custom click value (${CLICK_UNIT_LABEL[clickUnit]})`;
+  const cm = clickCmFrom(clickUnit, clickPreset, $('clickCustom').value);
+  $('clickHint').textContent = cm > 0
+    ? `1 click = ${+cm.toFixed(4)} cm at 100 m (${+(cm / MRAD_CM_PER_100M).toFixed(4)} MRAD · ${+(cm / MOA_CM_PER_100M).toFixed(4)} MOA)`
+    : 'Enter a click value.';
+}
+
+function clickChanged() {
+  applyClick();
+  calc();
+  saveState();
+  refreshAll();
+}
+
+function setClickUnit(u) {
+  if (u === clickUnit || !CLICK_PRESETS[u]) return;
+  clickUnit = u;
+  clickPreset = CLICK_DEFAULT[u];
+  clickChanged();
+}
+
+function setClickPreset(v) {
+  clickPreset = isClickPreset(clickUnit, v) ? v : '';
+  // Going custom: start from the current click, expressed in the turret's units.
+  if (clickPreset === '') {
+    const cm = parseFloat($('clickCm').value);
+    if (cm > 0) $('clickCustom').value = +(cm / unitCm(clickUnit, 100)).toFixed(4);
+  }
+  clickChanged();
+}
 
 // cm subtended at `dist` per 1 unit
 function unitCm(unit, dist) {
@@ -575,6 +731,104 @@ function setDrag(m) {
   saveState();
   refreshAll();
 }
+/* ---- Caliber ----
+   Stability (Miller) needs the actual bullet diameter, not the nominal name:
+   ".308 Win" and "7.62×51" both shoot a 0.308 in (7.823 mm) bullet. Each preset
+   stores that diameter in inches; picking one writes the mm value into tCaliber,
+   which the solver reads. "Custom" exposes the mm field for anything else. */
+const CALIBERS = [
+  ['17hmr', '.17 HMR', 0.172],
+  ['204', '.204 Ruger', 0.204],
+  ['22lr', '.22 LR', 0.223],
+  ['223', '.223 Rem / 5.56×45 NATO', 0.224],
+  ['22-250', '.22-250 Rem', 0.224],
+  ['224v', '.224 Valkyrie', 0.224],
+  ['243', '.243 Win', 0.243],
+  ['6cm', '6mm Creedmoor', 0.243],
+  ['6br', '6mm BR / 6 Dasher', 0.243],
+  ['25-06', '.25-06 Rem', 0.257],
+  ['65cm', '6.5 Creedmoor', 0.264],
+  ['65prc', '6.5 PRC', 0.264],
+  ['65x55', '6.5×55 Swedish', 0.264],
+  ['260', '.260 Rem', 0.264],
+  ['65grendel', '6.5 Grendel', 0.264],
+  ['270', '.270 Win', 0.277],
+  ['7-08', '7mm-08 Rem', 0.284],
+  ['7x64', '7×64', 0.284],
+  ['7rm', '7mm Rem Mag', 0.284],
+  ['7prc', '7mm PRC', 0.284],
+  ['308', '.308 Win / 7.62×51 NATO', 0.308],
+  ['30-06', '.30-06 Springfield', 0.308],
+  ['300blk', '.300 AAC Blackout', 0.308],
+  ['300wsm', '.300 WSM', 0.308],
+  ['300wm', '.300 Win Mag', 0.308],
+  ['300prc', '.300 PRC', 0.308],
+  ['300nm', '.300 Norma Mag', 0.308],
+  ['762x39', '7.62×39', 0.311],
+  ['303', '.303 British', 0.311],
+  ['762x54r', '7.62×54R', 0.312],
+  ['8x57', '8×57 IS', 0.323],
+  ['338wm', '.338 Win Mag', 0.338],
+  ['338lm', '.338 Lapua Mag', 0.338],
+  ['338nm', '.338 Norma Mag', 0.338],
+  ['93x62', '9.3×62', 0.366],
+  ['375hh', '.375 H&H Mag', 0.375],
+  ['375ct', '.375 CheyTac', 0.375],
+  ['408ct', '.408 CheyTac', 0.408],
+  ['416b', '.416 Barrett', 0.416],
+  ['50bmg', '.50 BMG / 12.7×99 NATO', 0.510]
+].map(([id, name, inch]) => ({ id, name, inch, mm: Math.round(inch * 25.4 * 1000) / 1000 }));
+
+const caliberById = id => CALIBERS.find(c => c.id === id) || null;
+const fmtInch = inch => inch.toFixed(3).replace(/^0/, '');
+
+function renderCaliberOptions() {
+  $('tCaliberSel').innerHTML = CALIBERS.map(c =>
+    `<option value="${c.id}">${escAttr(c.name)} — ${fmtInch(c.inch)}″</option>`).join('') +
+    '<option value="">Custom diameter…</option>';
+}
+
+// Reflect caliberId in the picker, the custom field and the hint line.
+function syncCaliber() {
+  const c = caliberById(caliberId);
+  $('tCaliberSel').value = c ? c.id : '';
+  $('tCaliberCustom').style.display = c ? 'none' : '';
+  const mm = parseFloat($('tCaliber').value);
+  $('tCaliberHint').textContent = c
+    ? `Bullet diameter ${fmtInch(c.inch)} in = ${c.mm.toFixed(2)} mm`
+    : (mm > 0 ? `= ${(mm / 25.4).toFixed(3).replace(/^0/, '')} in` : '');
+}
+
+function setCaliber(id) {
+  const c = caliberById(id);
+  caliberId = c ? c.id : '';
+  if (c) $('tCaliber').value = c.mm;
+  syncCaliber();
+  saveState();
+  refreshAll();
+}
+
+// Bullet weight in grains, whichever unit it was entered in.
+function weightGrains(val, unit) {
+  return unit === 'G' ? val / GRAMS_PER_GRAIN : val;
+}
+
+// Switching unit converts the value in place, like the other unit toggles.
+function setWeightUnit(u) {
+  if (u === weightUnit) return;
+  const el = $('tWeight');
+  const v = parseFloat(el.value);
+  if (v > 0) {
+    el.value = u === 'G'
+      ? Math.round(v * GRAMS_PER_GRAIN * 100) / 100
+      : Math.round(v / GRAMS_PER_GRAIN * 10) / 10;
+  }
+  weightUnit = u;
+  syncToggles();
+  saveState();
+  refreshAll();
+}
+
 function setTwist(d) { twistDir = d; syncToggles(); saveState(); refreshAll(); }
 function setTrajUnit(u) { trajUnit = u; syncToggles(); saveState(); refreshAll(); }
 
@@ -618,7 +872,8 @@ function airDensity(tempC, pressHpa, humPct) {
   return (P - Pv) / (287.058 * T) + Pv / (461.495 * T);
 }
 
-const GRAIN_TO_KG = 0.0000647989;
+const GRAMS_PER_GRAIN = 0.06479891;
+const GRAIN_TO_KG = GRAMS_PER_GRAIN / 1000;
 const G = 9.80665;
 
 function accel(vx, vy, vz, p) {
@@ -712,7 +967,7 @@ const angOf = (offsetCm, dist) => dist > 0 ? offsetCm / unitCm(trajUnit, dist) :
 // Returns { p, angle, sg, massKg } or { error }.
 function trajectoryContext() {
   const num = id => parseFloat($(id).value);
-  const bc = num('tBc'), mv = num('tMv'), weight = num('tWeight');
+  const bc = num('tBc'), mv = num('tMv'), weight = weightGrains(num('tWeight'), weightUnit);
   if (!(mv > 0) || !(bc > 0)) return { error: 'Enter valid muzzle velocity and BC.' };
 
   const rho = airDensity(num('tTemp'), num('tPress'), num('tHum'));
@@ -981,15 +1236,295 @@ function refreshTargets() {
 }
 function refreshAll() { refreshTable(); refreshTargets(); }
 
+/* ---------------- Saved gear: rifles, optics, ammo loads ---------------- */
+
+// Each kind owns a set of input fields plus the toggle state that belongs to it.
+// A profile is a plain snapshot of those values, so loading one is just a write-back.
+const GEAR_KEY = 'bc-gear-v1';
+const GEAR_KINDS = {
+  rifle: {
+    title: 'Rifle', plural: 'rifles',
+    inputs: ['tCaliber', 'tTwist', 'tSight', 'tZero'],
+    read: () => ({ twistDir, caliberId }),
+    write: d => {
+      if (d.twistDir === 'L' || d.twistDir === 'R') twistDir = d.twistDir;
+      const c = caliberById(d.caliberId);
+      caliberId = c ? c.id : '';
+      if (c) $('tCaliber').value = c.mm;
+    },
+    suggest: () => {
+      const c = caliberById(caliberId);
+      return `${c ? c.name : $('tCaliber').value + ' mm'} 1:${$('tTwist').value}`;
+    }
+  },
+  optic: {
+    title: 'Optic', plural: 'optics',
+    inputs: ['clickCm', 'clickCustom', 'clicksPerMark', 'marksPerTurn'],
+    read: () => ({ clickUnit, clickPreset, trajUnit }),
+    write: d => {
+      if (d.trajUnit === 'MRAD' || d.trajUnit === 'MOA') trajUnit = d.trajUnit;
+      if (!restoreClick(d.clickUnit, d.clickPreset) && d.clickCm) migrateClick(d.clickCm);
+      applyClick();
+    },
+    suggest: () => `${clickLabel()} scope`
+  },
+  load: {
+    // An ammo load: bullet weight, muzzle velocity, BC (+ optional length). The name is free text
+    // (cartridge, bullet, lot number — whatever identifies it).
+    title: 'Load', plural: 'loads',
+    // Bullet length is optional: saved empty, it loads empty (stability is then skipped).
+    inputs: ['tWeight', 'tMv', 'tBc', 'tLength'],
+    read: () => ({ weightUnit, dragModel }),
+    // Weight and BC are stored with their units/model, so they are restored as-is.
+    write: d => {
+      if (d.weightUnit === 'GR' || d.weightUnit === 'G') weightUnit = d.weightUnit;
+      if (d.dragModel === 'G1' || d.dragModel === 'G7') dragModel = d.dragModel;
+    },
+    suggest: () => `${$('tWeight').value} ${weightUnit === 'G' ? 'g' : 'gr'} @ ${$('tMv').value} m/s`
+  }
+};
+
+const emptyGear = () => Object.fromEntries(Object.keys(GEAR_KINDS).map(k => [k, { items: [], active: null }]));
+
+// localStorage is not trusted: keep only well-formed profiles with string values.
+function sanitizeGear(raw) {
+  const out = emptyGear();
+  if (!raw || typeof raw !== 'object') return out;
+  for (const kind of Object.keys(GEAR_KINDS)) {
+    const src = raw[kind];
+    if (!src || !Array.isArray(src.items)) continue;
+    const seen = new Set();
+    for (const it of src.items) {
+      if (!it || typeof it.id !== 'string' || !it.id || seen.has(it.id)) continue;
+      if (typeof it.name !== 'string' || !it.name.trim()) continue;
+      if (!it.data || typeof it.data !== 'object') continue;
+      const data = {};
+      for (const [k, v] of Object.entries(it.data)) {
+        if (typeof v === 'string' || typeof v === 'number') data[k] = String(v);
+      }
+      seen.add(it.id);
+      out[kind].items.push({ id: it.id, name: it.name.trim(), data });
+    }
+    if (seen.has(src.active)) out[kind].active = src.active;
+  }
+  return out;
+}
+
+let gear = emptyGear();
+
+function loadGear() {
+  try { gear = sanitizeGear(JSON.parse(localStorage.getItem(GEAR_KEY) || 'null')); }
+  catch (e) { gear = emptyGear(); }
+}
+function saveGear() {
+  try { localStorage.setItem(GEAR_KEY, JSON.stringify(gear)); } catch (e) { /* private mode */ }
+}
+
+const gearId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const activeItem = kind => gear[kind].items.find(it => it.id === gear[kind].active) || null;
+
+function gearSnapshot(kind) {
+  const k = GEAR_KINDS[kind];
+  const d = {};
+  Object.entries(k.read()).forEach(([key, v]) => { d[key] = String(v); });
+  k.inputs.forEach(id => { d[id] = $(id).value; });
+  return d;
+}
+
+// True when the on-screen values differ from what the profile stored.
+function gearModified(kind, item) {
+  const now = gearSnapshot(kind);
+  return Object.keys(now).some(key => key in item.data && item.data[key] !== now[key]);
+}
+
+function applyGear(kind, item) {
+  const k = GEAR_KINDS[kind];
+  k.inputs.forEach(id => { if (item.data[id] != null) $(id).value = item.data[id]; });
+  k.write(item.data);
+  gear[kind].active = item.id;
+  saveGear();
+  syncToggles();
+  calc();
+  updateBcHint();
+  saveState();
+  refreshAll();
+}
+
+function renderGear() {
+  $('gearRows').innerHTML = Object.entries(GEAR_KINDS).map(([kind, k]) => {
+    const g = gear[kind];
+    const opts = [`<option value="">${g.items.length ? '— not saved —' : `no saved ${k.plural} yet`}</option>`]
+      .concat(g.items.map(it =>
+        `<option value="${escAttr(it.id)}"${it.id === g.active ? ' selected' : ''}>${escAttr(it.name)}</option>`));
+    return `<div data-kind="${kind}">` +
+      `<label for="gear-${kind}">${k.title}</label>` +
+      `<select id="gear-${kind}" class="gear-sel">${opts.join('')}</select>` +
+      `<div class="gear-btns">` +
+      `<button data-act="save" title="Overwrite the selected ${k.title.toLowerCase()} with the current values">Save</button>` +
+      `<button data-act="saveas" title="Save the current values under a new name">Save as…</button>` +
+      `<button data-act="del" class="danger"${g.active ? '' : ' disabled'}>Delete</button>` +
+      `</div>` +
+      `<div class="gear-status" id="gear-${kind}-status"></div>` +
+      `</div>`;
+  }).join('');
+  updateGearStatus();
+}
+
+function updateGearStatus() {
+  for (const kind of Object.keys(GEAR_KINDS)) {
+    const el = $(`gear-${kind}-status`);
+    const item = activeItem(kind);
+    const mod = !!item && gearModified(kind, item);
+    el.textContent = mod ? 'Modified — Save to keep changes' : '';
+    el.classList.toggle('mod', mod);
+  }
+}
+
+function gearSaveAs(kind) {
+  const k = GEAR_KINDS[kind];
+  const cur = activeItem(kind);
+  const name = (prompt(`Name for this ${k.title.toLowerCase()}:`, cur ? cur.name : k.suggest()) || '').trim();
+  if (!name) return;
+  const g = gear[kind];
+  const clash = g.items.find(it => it.name.toLowerCase() === name.toLowerCase());
+  if (clash) {
+    if (!confirm(`"${clash.name}" already exists. Overwrite it?`)) return;
+    clash.data = gearSnapshot(kind);
+    g.active = clash.id;
+  } else {
+    const item = { id: gearId(), name, data: gearSnapshot(kind) };
+    g.items.push(item);
+    g.items.sort((a, b) => a.name.localeCompare(b.name));
+    g.active = item.id;
+  }
+  saveGear();
+  renderGear();
+}
+
+function gearSave(kind) {
+  const item = activeItem(kind);
+  if (!item) return gearSaveAs(kind);
+  item.data = gearSnapshot(kind);
+  saveGear();
+  updateGearStatus();
+}
+
+function gearDelete(kind) {
+  const item = activeItem(kind);
+  if (!item || !confirm(`Delete ${GEAR_KINDS[kind].title.toLowerCase()} "${item.name}"?`)) return;
+  const g = gear[kind];
+  g.items = g.items.filter(it => it.id !== item.id);
+  g.active = null;
+  saveGear();
+  renderGear();
+}
+
+/* ---- Export / import ---- */
+const GEAR_FILE_TYPE = 'bc-gear';
+
+function gearExportData() {
+  const out = { type: GEAR_FILE_TYPE, version: 1, exported: new Date().toISOString(), gear: {} };
+  for (const kind of Object.keys(GEAR_KINDS)) {
+    out.gear[kind] = gear[kind].items.map(({ name, data }) => ({ name, data }));
+  }
+  return out;
+}
+
+// Merge imported profiles into `current` by name (case-insensitive) per kind:
+// a same-named profile keeps its id but takes the imported values, others are added.
+// Pure: returns a new store plus counts, leaves `current` untouched.
+function mergeGear(current, file) {
+  if (!file || typeof file !== 'object') return null;
+  if (file.type !== GEAR_FILE_TYPE || !file.gear || typeof file.gear !== 'object') return null;
+  // The file lists profiles without ids; give each a placeholder so sanitizeGear keeps it.
+  const raw = {};
+  for (const kind of Object.keys(GEAR_KINDS)) {
+    const list = Array.isArray(file.gear[kind]) ? file.gear[kind] : [];
+    raw[kind] = { items: list.map((it, i) => ({ ...(it && typeof it === 'object' ? it : {}), id: 'imp' + i })) };
+  }
+  const incoming = sanitizeGear(raw);
+  const next = JSON.parse(JSON.stringify(current));
+  let added = 0, replaced = 0;
+  for (const kind of Object.keys(GEAR_KINDS)) {
+    const g = next[kind];
+    for (const it of incoming[kind].items) {
+      const same = g.items.find(x => x.name.toLowerCase() === it.name.toLowerCase());
+      if (same) { same.data = it.data; replaced++; }
+      else { g.items.push({ id: gearId(), name: it.name, data: it.data }); added++; }
+    }
+    g.items.sort((a, b) => a.name.localeCompare(b.name));
+  }
+  return { gear: next, added, replaced };
+}
+
+function gearMessage(text, isErr) {
+  const el = $('gearMsg');
+  el.textContent = text;
+  el.classList.toggle('err', !!isErr);
+}
+
+function gearExport() {
+  const n = Object.values(gear).reduce((sum, g) => sum + g.items.length, 0);
+  if (!n) return gearMessage('Nothing to export yet — save a rifle, optic or load first.', true);
+  const blob = new Blob([JSON.stringify(gearExportData(), null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `bc-gear-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  gearMessage(`Exported ${n} profile${n !== 1 ? 's' : ''}.`);
+}
+
+function gearImportText(text) {
+  let file;
+  try { file = JSON.parse(text); } catch (e) { file = null; }
+  const r = mergeGear(gear, file);
+  if (!r) return gearMessage('That file is not a saved-gear export.', true);
+  if (!r.added && !r.replaced) return gearMessage('No usable profiles found in that file.', true);
+  gear = r.gear;
+  saveGear();
+  renderGear();
+  gearMessage(`Imported: ${r.added} added, ${r.replaced} replaced.`);
+}
+
+$('gearExportBtn').addEventListener('click', gearExport);
+$('gearImportBtn').addEventListener('click', () => $('gearImportFile').click());
+$('gearImportFile').addEventListener('change', e => {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';   // allow re-importing the same file
+  if (!f) return;
+  f.text().then(gearImportText, () => gearMessage('Could not read that file.', true));
+});
+
+$('gearRows').addEventListener('change', e => {
+  const box = e.target.closest ? e.target.closest('[data-kind]') : null;
+  if (!box || !e.target.classList.contains('gear-sel')) return;
+  const kind = box.dataset.kind;
+  const item = gear[kind].items.find(it => it.id === e.target.value);
+  if (item) applyGear(kind, item);
+  else { gear[kind].active = null; saveGear(); }
+  renderGear();
+});
+$('gearRows').addEventListener('click', e => {
+  const btn = e.target.closest ? e.target.closest('button[data-act]') : null;
+  if (!btn) return;
+  const kind = btn.closest('[data-kind]').dataset.kind;
+  ({ save: gearSave, saveas: gearSaveAs, del: gearDelete })[btn.dataset.act](kind);
+});
+
 /* ---------------- Wiring ---------------- */
 document.querySelectorAll('#card1 input').forEach(el => el.addEventListener('input', () => {
+  if (el.id === 'clickCustom') applyClick();
   calc();
   saveState();
-  if (['clickCm', 'clicksPerMark', 'marksPerTurn'].includes(el.id)) refreshAll();
+  if (['clickCustom', 'clicksPerMark', 'marksPerTurn'].includes(el.id)) refreshAll();
 }));
 document.querySelectorAll('#card2 input').forEach(el => el.addEventListener('input', () => {
   saveState();
   if (['tBc', 'tMv', 'tTemp'].includes(el.id)) updateBcHint();
+  if (el.id === 'tCaliber') syncCaliber();
 }));
 
 // Target rows are rebuilt on add/remove, so listen on the container.
@@ -1005,11 +1540,17 @@ $('targetRows').addEventListener('click', e => {
   if (btn) removeTarget(Number(btn.dataset.i));
 });
 $('addTargetBtn').addEventListener('click', addTarget);
+$('tCaliberSel').addEventListener('change', e => setCaliber(e.target.value));
+$('clickPreset').addEventListener('change', e => setClickPreset(e.target.value));
 
+renderCaliberOptions();
 loadState();
+loadGear();
 syncToggles();
+applyClick();
 calc();
 renderTargetRows();
+renderGear();
 updateBcHint();
 </script>
 </body>

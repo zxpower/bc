@@ -407,9 +407,9 @@ let dragModel = 'G7';    // matches default BC 0.243 (175gr SMK, G7)
 let twistDir = 'R';
 let trajUnit = 'MRAD';
 let weightUnit = 'GR';   // bullet weight entered in grains (GR) or grams (G)
-let caliberId = '308';
+let caliberId = '308';   // preset from CALIBERS, or '' for a custom diameter
 let clickUnit = 'CM';     // turret graduation: MOA, MRAD or CM (cm per 100 m)
-let clickPreset = '0.25'; // one of CLICK_PRESETS[clickUnit], or '' for a custom value   // preset from CALIBERS, or '' for a custom diameter
+let clickPreset = '0.25'; // one of CLICK_PRESETS[clickUnit], or '' for a custom value
 
 const STATE_KEY = 'bc-state-v1';
 
@@ -437,8 +437,8 @@ function loadState() {
   if (s.weightUnit === 'GR' || s.weightUnit === 'G') weightUnit = s.weightUnit;
   // State saved before the caliber list existed only has a diameter: keep it as custom.
   if (s.caliberId === '' || caliberById(s.caliberId)) caliberId = s.caliberId;
-  if (!restoreClick(s.clickUnit, s.clickPreset) && s.inputs && s.inputs.clickCm) migrateClick(s.inputs.clickCm);
   else if (s.inputs && s.inputs.tCaliber) caliberId = '';
+  if (!restoreClick(s.clickUnit, s.clickPreset) && s.inputs && s.inputs.clickCm) migrateClick(s.inputs.clickCm);
   if (Array.isArray(s.targets) && s.targets.length) targets = s.targets.map(v => String(v ?? ''));
 }
 

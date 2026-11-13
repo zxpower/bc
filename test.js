@@ -349,6 +349,22 @@ test('no input field belongs to two kinds', () => {
   const all = Object.values(GEAR_KINDS).flatMap(k => k.inputs);
   assert.strictEqual(new Set(all).size, all.length);
 });
+test('reload keeps a preset caliber alongside restored click settings', () => {
+  const saved = JSON.stringify({ caliberId: '65cm', clickUnit: 'MRAD', clickPreset: '0.1', inputs: { tCaliber: '6.706', clickCm: '1' } });
+  const orig = localStorage.getItem;
+  localStorage.getItem = () => saved;
+  try { caliberId = '308'; loadState(); } finally { localStorage.getItem = orig; }
+  assert.strictEqual(caliberId, '65cm');
+  assert.strictEqual(clickUnit, 'MRAD');
+});
+test('legacy state with only a diameter loads as custom caliber', () => {
+  const orig = localStorage.getItem;
+  localStorage.getItem = () => JSON.stringify({ inputs: { tCaliber: '7.62', clickCm: '0.3' } });
+  try { caliberId = '308'; loadState(); } finally { localStorage.getItem = orig; }
+  assert.strictEqual(caliberId, '');
+  assert.strictEqual(clickUnit, 'CM');
+  assert.strictEqual(clickPreset, '');
+});
 `;
 
 eval(src + suite);

@@ -98,6 +98,11 @@
     outline: none;
   }
   input:focus, select:focus { border-color: var(--accent); }
+  /* iOS sizes native selects/number inputs to their content; without min-width: 0
+     their grid/flex cells grow past the card and the page scrolls sideways. */
+  input, select { min-width: 0; max-width: 100%; }
+  select { text-overflow: ellipsis; }
+  .grid2 > *, .grid3 > *, .row > *, .gear-grid > *, .trow > * { min-width: 0; }
   .row { display: flex; gap: 10px; }
   .row > div { flex: 1; }
   .toggle { display: flex; gap: 8px; margin-top: 6px; }

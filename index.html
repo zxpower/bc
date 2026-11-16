@@ -734,6 +734,15 @@ function migrateTurn(inputs) {
 
 const overTravel = (clicks, total) => total > 0 && clicks > total;
 
+/* Past the turret's travel the shooter dials the max and holds the remainder on
+   the reticle. Returned as a reticle reading (SFP-scaled), or null if dialable. */
+function overHold(offsetCm, dist, t, o) {
+  const clicks = clicksFor(offsetCm, dist, t.clickCm);
+  if (!overTravel(clicks, t.total) || !(dist > 0)) return null;
+  const restCm = offsetCm - t.total * t.clickCm * dist / 100;
+  return Math.max(0, restCm) / unitCm(trajUnit, dist) * o.scale;
+}
+
 /* ---- Reticle ----
    An SFP reticle only subtends its nominal value at one magnification; at zoom M
    each division covers nominal × cal / M, so a hold of A reads as A × M / cal
@@ -800,8 +809,11 @@ function render(r, dist, t, labelWord, outEl, breakdownEl, detailEl) {
     detailEl.textContent = '';
     return;
   }
-  outEl.innerHTML = r.clicks + ' <span>clicks</span>';
-  const b = breakdownClicks(r.clicks, t.perMark, t.perTurn);
+  const o = opticSettings();
+  const rest = overHold(r.offsetCm, dist, t, o);
+  const dial = rest == null ? r.clicks : t.total;
+  outEl.innerHTML = dial + ` <span>clicks${rest == null ? '' : ' (max)'}</span>`;
+  const b = breakdownClicks(dial, t.perMark, t.perTurn);
   const parts = [];
   if (b) {
     if (b.turns > 0) parts.push(`${b.turns} turn${b.turns !== 1 ? 's' : ''}`);
@@ -809,10 +821,10 @@ function render(r, dist, t, labelWord, outEl, breakdownEl, detailEl) {
     parts.push(`+ ${b.rem} click${b.rem !== 1 ? 's' : ''}`);
   }
   breakdownEl.textContent = parts.join(' · ');
-  if (overTravel(r.clicks, t.total)) {
-    breakdownEl.innerHTML += `<div style="color:var(--danger)">⚠ beyond the turret's ${t.total} clicks of travel — hold the rest</div>`;
+  if (rest != null) {
+    breakdownEl.innerHTML += `<div style="color:var(--danger)">⚠ needs ${r.clicks} clicks, turret has ${t.total} — ` +
+      `dial max and hold over <b>${rest.toFixed(2)} ${trajUnit}</b>${holdTag(o) ? ' ' + holdTag(o) : ''}</div>`;
   }
-  const o = opticSettings();
   const hold = r.offsetCm / unitCm(trajUnit, dist) * o.scale;
   detailEl.textContent =
     `${labelWord} = ${r.offsetCm.toFixed(2)} cm · 1 click = ${r.clickCmAtDist.toFixed(3)} cm @ ${dist} m · raw ${r.rawClicks.toFixed(2)}` +
@@ -1137,16 +1149,19 @@ function clicksFor(offsetCm, dist, clickCmVal) {
   return clickCmAtDist > 0 ? Math.round(offsetCm / clickCmAtDist) : 0;
 }
 
-// "54 (13m+2)" or "150 (1t 1m+2)" — dialable directly on the turret; ⚠ past `total`.
+// "54 (13m+2)" or "150 (1t 1m+2)" — dialable directly on the turret.
+// Past `total` it shows the max that can be dialed, flagged "⚠ max".
 function fmtClicks(n, perMark, perTurn, total) {
-  const a = Math.abs(n);
+  const over = overTravel(Math.abs(n), total);
+  const a = over ? total : Math.abs(n);
   const b = breakdownClicks(a, perMark, perTurn);
-  const warn = overTravel(a, total) ? ' ⚠' : '';
+  const warn = over ? ' ⚠ max' : '';
   if (!b) return a + warn;
   return a + ' (' + (b.turns > 0 ? b.turns + 't ' : '') + b.mark + 'm+' + b.rem + ')' + warn;
 }
 
-const TRAVEL_NOTE = t => `⚠ = beyond the turret's ${t.total} clicks of elevation travel — hold the rest on the reticle.`;
+const TRAVEL_NOTE = (t, u) => `⚠ max = needs more than the turret's ${t.total} clicks of elevation — ` +
+  `dial the max and hold the "Over hold ${u}" value on the reticle.`;
 
 const angOf = (offsetCm, dist) => dist > 0 ? offsetCm / unitCm(trajUnit, dist) : 0;
 
@@ -1273,30 +1288,33 @@ function runTrajectory() {
   const uLabel = trajUnit;
   const o = opticSettings();
   const sfp = o.plane === 'SFP';
+  const shots = raw.map(r => deriveShot(ctx, r, t));
+  const over = shots.some(s => overTravel(s.eClk, t.total));
   let html = '<table><thead><tr>' +
     '<th>Dist m</th><th>Vel m/s</th><th>Energy J</th><th>ToF s</th>' +
     `<th>Drop cm</th><th>Drop ${uLabel}</th>${sfp ? '<th>Elev hold</th>' : ''}<th>Elev clk</th>` +
+    (over ? `<th>Over hold ${uLabel}</th>` : '') +
     `<th>Wind cm</th><th>Wind ${uLabel}</th>${sfp ? '<th>Wind hold</th>' : ''}<th>Wind clk</th>` +
     '</tr></thead><tbody>';
   let cards = '';
-  let over = false;
 
-  for (const raw_r of raw) {
-    const s = deriveShot(ctx, raw_r, t);
+  for (const s of shots) {
     const dist = s.dist;
+    const rest = overHold(s.dropCm, dist, t, o);
     html += '<tr>' +
       `<td>${dist}</td><td>${s.v.toFixed(0)}</td><td>${s.energy.toFixed(0)}</td><td>${s.tof.toFixed(2)}</td>` +
       `<td>${s.dropCm.toFixed(1)}</td><td>${angOf(s.dropCm, dist).toFixed(2)}</td>` +
       (sfp ? `<td>${(angOf(s.dropCm, dist) * o.scale).toFixed(2)}</td>` : '') +
       `<td>${fmtClicks(s.eClk, t.perMark, t.perTurn, t.total)}</td>` +
+      (over ? `<td>${rest == null ? '–' : rest.toFixed(2)}</td>` : '') +
       `<td>${Math.abs(s.windCm).toFixed(1)} ${s.side}</td><td>${Math.abs(angOf(s.windCm, dist)).toFixed(2)}</td>` +
       (sfp ? `<td>${Math.abs(angOf(s.windCm, dist) * o.scale).toFixed(2)}</td>` : '') +
       `<td>${fmtClicks(s.wClk, t.perMark, t.perTurn)} ${s.side}</td>` +
       '</tr>';
-    if (overTravel(s.eClk, t.total)) over = true;
     cards +=
       `<div class="tcard"><div class="d">${dist} m</div>` +
-      `<div>Drop ${s.dropCm.toFixed(1)} cm · ${angOf(s.dropCm, dist).toFixed(2)} ${uLabel}${sfp ? ` (hold ${(angOf(s.dropCm, dist) * o.scale).toFixed(2)})` : ''} · dial UP ${fmtClicks(s.eClk, t.perMark, t.perTurn, t.total)}</div>` +
+      `<div>Drop ${s.dropCm.toFixed(1)} cm · ${angOf(s.dropCm, dist).toFixed(2)} ${uLabel}${sfp ? ` (hold ${(angOf(s.dropCm, dist) * o.scale).toFixed(2)})` : ''} · dial UP ${fmtClicks(s.eClk, t.perMark, t.perTurn, t.total)}` +
+      `${rest == null ? '' : ` + hold over ${rest.toFixed(2)} ${uLabel}`}</div>` +
       `<div>Wind ${Math.abs(s.windCm).toFixed(1)} cm ${s.side} · ${Math.abs(angOf(s.windCm, dist)).toFixed(2)} ${uLabel}${sfp ? ` (hold ${Math.abs(angOf(s.windCm, dist) * o.scale).toFixed(2)})` : ''} · dial ${s.side === 'R' ? 'LEFT' : 'RIGHT'} ${fmtClicks(s.wClk, t.perMark, t.perTurn)}</div>` +
       `<div class="m">${s.v.toFixed(0)} m/s · ${s.energy.toFixed(0)} J · ${s.tof.toFixed(2)} s</div></div>`;
   }
@@ -1304,7 +1322,7 @@ function runTrajectory() {
   wrap.innerHTML = html;
   cardsEl.innerHTML = cards;
   wrap.dataset.has = '1';
-  noteEl.textContent = [noteEl.textContent, over ? TRAVEL_NOTE(t) : '',
+  noteEl.textContent = [noteEl.textContent, over ? TRAVEL_NOTE(t, uLabel) : '',
     sfp ? `Hold columns are reticle readings ${holdTag(o)}.` : ''].filter(Boolean).join(' ');
 }
 
@@ -1374,11 +1392,12 @@ function runTargets() {
   const uLabel = trajUnit;
   const o = opticSettings();
   const sfp = o.plane === 'SFP';
-  let over = false;
+  const over = shots.some(s => s && overTravel(s.eClk, t.total));
 
   let html = '<table><thead><tr>' +
     '<th>Target</th><th>Dist m</th>' +
     `<th>Drop cm</th><th>Elev ${uLabel}</th>${sfp ? '<th>Elev hold</th>' : ''}<th>Elev clk (UP)</th>` +
+    (over ? `<th>Over hold ${uLabel}</th>` : '') +
     `<th>Drift cm</th><th>Wind ${uLabel}</th>${sfp ? '<th>Wind hold</th>' : ''}<th>Wind clk (dial)</th>` +
     '<th>ToF s</th><th>Vel m/s</th>' +
     '</tr></thead><tbody>';
@@ -1391,28 +1410,30 @@ function runTargets() {
       unreachable.push(name);
       const shown = dists[i] > 0 ? Math.round(dists[i]) : '–';
       html += `<tr><td>${name}</td><td>${shown}</td>` +
-        '<td>–</td>'.repeat(sfp ? 10 : 8) + '</tr>';
+        '<td>–</td>'.repeat(8 + (sfp ? 2 : 0) + (over ? 1 : 0)) + '</tr>';
       cards += `<div class="tcard"><div class="d">${name} · ${shown} m</div>` +
         '<div class="m">No solution — set a distance the bullet can reach.</div></div>';
       return;
     }
     const dist = s.dist;
     const dialSide = s.side === 'R' ? 'LEFT' : 'RIGHT';
+    const rest = overHold(s.dropCm, dist, t, o);
     html += '<tr>' +
       `<td>${name}</td><td>${dist}</td>` +
       `<td>${s.dropCm.toFixed(1)}</td><td>${angOf(s.dropCm, dist).toFixed(2)}</td>` +
       (sfp ? `<td>${(angOf(s.dropCm, dist) * o.scale).toFixed(2)}</td>` : '') +
       `<td>${fmtClicks(s.eClk, t.perMark, t.perTurn, t.total)}</td>` +
+      (over ? `<td>${rest == null ? '–' : rest.toFixed(2)}</td>` : '') +
       `<td>${Math.abs(s.windCm).toFixed(1)} ${s.side}</td>` +
       `<td>${Math.abs(angOf(s.windCm, dist)).toFixed(2)}</td>` +
       (sfp ? `<td>${Math.abs(angOf(s.windCm, dist) * o.scale).toFixed(2)}</td>` : '') +
       `<td>${fmtClicks(s.wClk, t.perMark, t.perTurn)} ${dialSide.charAt(0)}</td>` +
       `<td>${s.tof.toFixed(2)}</td><td>${s.v.toFixed(0)}</td>` +
       '</tr>';
-    if (overTravel(s.eClk, t.total)) over = true;
     cards +=
       `<div class="tcard"><div class="d">${name} · ${dist} m</div>` +
-      `<div>Drop ${s.dropCm.toFixed(1)} cm · ${angOf(s.dropCm, dist).toFixed(2)} ${uLabel}${sfp ? ` (hold ${(angOf(s.dropCm, dist) * o.scale).toFixed(2)})` : ''} · dial UP ${fmtClicks(s.eClk, t.perMark, t.perTurn, t.total)}</div>` +
+      `<div>Drop ${s.dropCm.toFixed(1)} cm · ${angOf(s.dropCm, dist).toFixed(2)} ${uLabel}${sfp ? ` (hold ${(angOf(s.dropCm, dist) * o.scale).toFixed(2)})` : ''} · dial UP ${fmtClicks(s.eClk, t.perMark, t.perTurn, t.total)}` +
+      `${rest == null ? '' : ` + hold over ${rest.toFixed(2)} ${uLabel}`}</div>` +
       `<div>Wind ${Math.abs(s.windCm).toFixed(1)} cm ${s.side} · ${Math.abs(angOf(s.windCm, dist)).toFixed(2)} ${uLabel}${sfp ? ` (hold ${Math.abs(angOf(s.windCm, dist) * o.scale).toFixed(2)})` : ''} · dial ${dialSide} ${fmtClicks(s.wClk, t.perMark, t.perTurn)}</div>` +
       `<div class="m">${s.v.toFixed(0)} m/s · ${s.energy.toFixed(0)} J · ${s.tof.toFixed(2)} s</div></div>`;
   });
@@ -1425,7 +1446,7 @@ function runTargets() {
     noteEl.textContent = `No solution for target${unreachable.length > 1 ? 's' : ''} ` +
       `${unreachable.join(', ')} — distance missing or beyond this load's reach.`;
   }
-  noteEl.textContent = [noteEl.textContent, over ? TRAVEL_NOTE(t) : '',
+  noteEl.textContent = [noteEl.textContent, over ? TRAVEL_NOTE(t, uLabel) : '',
     sfp ? `Hold columns are reticle readings ${holdTag(o)}.` : ''].filter(Boolean).join(' ');
 }
 

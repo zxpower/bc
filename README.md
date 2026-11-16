@@ -30,7 +30,9 @@ Both the click value and clicks-per-mark are adjustable for other scopes/turrets
 A full turn is set in **clicks**, so turrets whose turn ends mid-mark work too:
 a 100-click 1/8 MOA turret (8 clicks per mark = 12.5 marks per turn) dials
 113 clicks as `1 turn · mark 1 · + 5 clicks`. An optional **total elevation
-clicks** value flags corrections (⚠) beyond the turret's travel.
+clicks** value caps the dial: past it the tables show the max clicks
+(`⚠ max`) plus an **Over hold** column with the remainder to hold over on the
+reticle (SFP-scaled when applicable).
 
 ### Reticle: FFP / SFP
 

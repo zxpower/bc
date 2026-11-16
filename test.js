@@ -13,10 +13,10 @@ assert(match, 'index.html must contain a <script> block');
 let src = match[1].replace("'use strict';", '');
 
 const mkEl = () => ({
-  value: '0', classList: { toggle() {} }, dataset: {},
-  textContent: '', innerHTML: '', style: {}, addEventListener() {}
+  value: '0', classList: { toggle() {}, contains: () => false }, dataset: {},
+  textContent: '', innerHTML: '', style: {}, addEventListener() {}, setAttribute() {}
 });
-global.document = { getElementById: () => mkEl(), querySelectorAll: () => [] };
+global.document = { getElementById: () => mkEl(), querySelectorAll: () => [], addEventListener() {} };
 global.localStorage = { getItem: () => null, setItem() {} };
 
 /* ---- test framework (tiny) ---- */

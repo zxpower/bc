@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ballistic Turret Calculator</title>
+<title>Ballistic Calculator</title>
 <style>
   :root {
     --bg: #0e1116;
@@ -142,18 +142,28 @@
   .gear-status.err { color: var(--danger); }
   .gear-io { margin-top: 18px; max-width: 420px; }
   @media (max-width: 700px) { .gear-grid { grid-template-columns: 1fr; } }
+  html { overflow-x: clip; -webkit-text-size-adjust: 100%; }
   .tabs {
     position: sticky; top: 0; z-index: 10; width: 100%; max-width: 900px;
-    display: flex; gap: 6px; padding: 8px; margin: -12px 0 0;
+    display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 16px; margin: -12px 0 0;
     background: rgba(14,17,22,.92); backdrop-filter: blur(6px);
-    border: 1px solid var(--border); border-radius: 12px; overflow-x: auto;
+    border: 1px solid var(--border); border-radius: 12px;
   }
-  .tabs button {
+  .brand { font-weight: 800; font-size: 16px; white-space: nowrap; }
+  .tablist { display: flex; gap: 6px; flex: 1; min-width: 0; }
+  .menu-btn {
+    display: none; margin-left: auto; align-items: center; gap: 10px;
+    padding: 8px 12px; border-radius: 8px; cursor: pointer;
+    background: #0e1116; border: 1px solid var(--border); color: var(--text);
+    font-size: 15px; font-weight: 600;
+  }
+  .menu-btn .burger { font-size: 20px; line-height: 1; color: var(--accent); }
+  .tablist button {
     flex: 1; padding: 10px 8px; border-radius: 8px; cursor: pointer; white-space: nowrap;
     background: transparent; border: 1px solid transparent; color: var(--muted);
     font-size: 14px; font-weight: 600;
   }
-  .tabs button.active { background: var(--accent); color: #04121f; }
+  .tablist button.active { background: var(--accent); color: #04121f; }
   section.tab { display: none; width: 100%; flex-direction: column; align-items: center; gap: 20px; }
   section.tab.active { display: flex; }
   .card .grid2, .card .grid3 { margin-top: 10px; }
@@ -161,18 +171,37 @@
     body { padding: 12px; gap: 14px; }
     .card { padding: 18px; }
     .grid3 { grid-template-columns: 1fr 1fr; }
-    .tabs button { padding: 10px 6px; font-size: 13px; }
+    /* iOS Safari zooms into inputs under 16px, which pans the page sideways. */
+    input, select { font-size: 16px; }
+    .tabs { margin: -4px 0 0; padding: 8px 8px 8px 14px; }
+    .menu-btn { display: flex; }
+    .tablist {
+      display: none; position: absolute; top: calc(100% + 6px); left: 0; right: 0;
+      flex-direction: column; padding: 8px; gap: 4px;
+      background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+      box-shadow: 0 12px 30px rgba(0,0,0,.5);
+    }
+    .tabs.open .tablist { display: flex; }
+    .tablist button { text-align: left; padding: 14px 12px; font-size: 16px; }
+    .row .toggle[style] { flex-basis: 180px !important; }
+    .span-m { grid-column: 1 / -1; }
   }
 </style>
 </head>
 <body>
-<nav class="tabs" id="tabs">
-  <button data-tab="setup">Setup</button>
-  <button data-tab="weather">Weather</button>
-  <button data-tab="dial">Turret</button>
-  <button data-tab="table">Trajectory</button>
-  <button data-tab="targets">Targets</button>
-</nav>
+<header class="tabs" id="tabs">
+  <div class="brand">Ballistic Calculator</div>
+  <button class="menu-btn" id="menuBtn" aria-expanded="false" aria-controls="tabMenu" aria-label="Menu">
+    <span id="menuCur">Setup</span><span class="burger" aria-hidden="true">☰</span>
+  </button>
+  <nav class="tablist" id="tabMenu">
+    <button data-tab="setup">Setup</button>
+    <button data-tab="weather">Weather</button>
+    <button data-tab="dial">Turret</button>
+    <button data-tab="table">Trajectory</button>
+    <button data-tab="targets">Targets</button>
+  </nav>
+</header>
 
 <section class="tab" data-tab="setup">
 <div class="card wide" id="gearCard">
@@ -301,7 +330,7 @@
 <div class="card wide" id="loadCard">
   <h1>Load</h1>
   <div class="grid3">
-    <div>
+    <div class="span-m">
       <label>Bullet weight</label>
       <div class="row">
         <div><input id="tWeight" type="number" inputmode="decimal" value="175" min="0" step="1"></div>
@@ -372,7 +401,7 @@
 
 <section class="tab" data-tab="dial">
 <div class="card" id="card1">
-  <h1>Ballistic Turret Calculator</h1>
+  <h1>Turret Calculator</h1>
   <div class="sub">How many clicks to dial for a given drop &amp; distance.
     Turret and reticle come from Setup → Optic.</div>
 
@@ -1772,15 +1801,31 @@ function showTab(name) {
   const tabs = [...document.querySelectorAll('section.tab')];
   if (!tabs.some(t => t.dataset.tab === name)) name = 'setup';
   tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === name));
-  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('#tabMenu button').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === name);
+    if (b.dataset.tab === name) $('menuCur').textContent = b.textContent;
+  });
+  setMenu(false);
   try { localStorage.setItem(TAB_KEY, name); } catch (e) { /* private mode */ }
 }
-$('tabs').addEventListener('click', e => {
+function setMenu(open) {
+  $('tabs').classList.toggle('open', open);
+  $('menuBtn').setAttribute('aria-expanded', String(open));
+}
+$('menuBtn').addEventListener('click', e => {
+  e.stopPropagation();
+  setMenu(!$('tabs').classList.contains('open'));
+});
+$('tabMenu').addEventListener('click', e => {
   const b = e.target.closest ? e.target.closest('button[data-tab]') : null;
   if (!b) return;
   showTab(b.dataset.tab);
   window.scrollTo(0, 0);
 });
+document.addEventListener('click', e => {
+  if (e.target.closest && !e.target.closest('#tabs')) setMenu(false);
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') setMenu(false); });
 
 // Target rows are rebuilt on add/remove, so listen on the container.
 $('targetRows').addEventListener('input', e => {

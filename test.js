@@ -68,8 +68,19 @@ test('travel limit is flagged only when set and exceeded', () => {
   assert.strictEqual(overTravel(120, 100), true);
   assert.strictEqual(overTravel(100, 100), false);
   assert.strictEqual(overTravel(120, 0), false);
-  assert.strictEqual(fmtClicks(113, 8, 100, 100), '113 (1t 1m+5) ⚠');
+  assert.strictEqual(fmtClicks(113, 8, 100, 100), '100 (1t 0m+0) ⚠ max');
   assert.strictEqual(fmtClicks(54, 4, 144, 200), '54 (13m+2)');
+});
+test('past max travel: dial the max, hold the rest on the reticle', () => {
+  trajUnit = 'MOA';
+  const t = { clickCm: clickCmFrom('MOA', '0.125', ''), total: 100 };   // 100 x 1/8 MOA = 12.5 MOA
+  const ffp = { scale: 1 }, sfp = { scale: reticleScale('SFP', 20, 40) };
+  const at = 500, cm = 15 * unitCm('MOA', at);                           // 15 MOA of drop
+  approx(overHold(cm, at, t, ffp), 2.5, 1e-9, 'FFP holds 15 - 12.5 MOA');
+  approx(overHold(cm, at, t, sfp), 1.25, 1e-9, 'SFP @ 20x of 40x halves it');
+  assert.strictEqual(overHold(10 * unitCm('MOA', at), at, t, ffp), null, '10 MOA fits the turret');
+  assert.strictEqual(overHold(cm, at, { ...t, total: 0 }, ffp), null, 'no limit set');
+  trajUnit = 'MRAD';
 });
 test('SFP reticle scale: true at cal mag, halves at half zoom; FFP always 1', () => {
   assert.strictEqual(reticleScale('SFP', 40, 40), 1);

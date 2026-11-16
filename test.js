@@ -77,6 +77,12 @@ test('SFP reticle scale: true at cal mag, halves at half zoom; FFP always 1', ()
   assert.strictEqual(reticleScale('FFP', 10, 40), 1);
   assert.strictEqual(reticleScale('SFP', NaN, 40), 1);
 });
+test('SFP 10-40x true at 40x, shot at 15x: 12 cm drop at 89 m', () => {
+  const trueMoa = 12 / unitCm('MOA', 89);
+  approx(trueMoa, 4.635, 0.001, 'true angle MOA');
+  approx(trueMoa * reticleScale('SFP', 15, 40), 1.738, 0.001, 'reticle hold MOA');
+  approx(trueMoa * reticleScale('FFP', 15, 40), trueMoa, 1e-12, 'FFP reads true');
+});
 test('solve rejects invalid input', () => {
   assert.strictEqual(solve(1, 'MOA', 0, 0.25), null);
   assert.strictEqual(solve(-1, 'MOA', 100, 0.25), null);

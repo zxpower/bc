@@ -259,8 +259,8 @@
       <input id="oCalMag" type="number" inputmode="decimal" value="" min="1" step="0.5" placeholder="max zoom">
     </div>
     <div>
-      <label>Current magnification (×)</label>
-      <input id="oMag" type="number" inputmode="decimal" value="" min="1" step="0.5" placeholder="max zoom">
+      <label>Shooting magnification (×)</label>
+      <input id="oMag" class="mag-in" type="number" inputmode="decimal" value="" min="1" step="0.5" placeholder="max zoom">
     </div>
   </div>
   <div class="detail" id="opticHint"></div>
@@ -378,6 +378,10 @@
 
   <label>Distance (m)</label>
   <input id="distance" type="number" inputmode="decimal" value="300" min="0" step="1">
+  <div class="sfp-only" style="display:none">
+    <label for="oMagDial">Shooting magnification (×) — SFP reticle holds are given for this zoom</label>
+    <input id="oMagDial" class="mag-in" type="number" inputmode="decimal" value="" min="1" step="0.5" placeholder="max zoom">
+  </div>
 
   <label>Elevation — bullet drop</label>
   <div class="row">
@@ -441,6 +445,11 @@
     </div>
   </div>
 
+  <div class="sfp-only" style="display:none">
+    <label for="oMagTable">Shooting magnification (×) — SFP reticle holds are given for this zoom</label>
+    <input id="oMagTable" class="mag-in" type="number" inputmode="decimal" value="" min="1" step="0.5" placeholder="max zoom">
+  </div>
+
   <button class="primary" onclick="runTrajectory()">Calculate trajectory</button>
   <div class="err" id="tErr"></div>
   <div class="note" id="tNote"></div>
@@ -455,6 +464,11 @@
   <h1>Target Card</h1>
   <div class="sub">Corrections for a set of known targets — uses the rifle, optic, load
     and weather from the other tabs.</div>
+
+  <div class="sfp-only" style="display:none">
+    <label for="oMagTargets">Shooting magnification (×) — SFP reticle holds are given for this zoom</label>
+    <input id="oMagTargets" class="mag-in" type="number" inputmode="decimal" value="" min="1" step="0.5" placeholder="max zoom">
+  </div>
 
   <label>Target distances (m)</label>
   <div id="targetRows"></div>
@@ -737,13 +751,14 @@ function opticSettings() {
   return { plane: focalPlane, min: num('oZoomMin'), max, cal, mag, scale: reticleScale(focalPlane, mag, cal) };
 }
 
-// "@ 10× (SFP, true at 40×)" — empty when the reticle reads true.
+// "@ 10× (SFP, true at 40×)" — empty for FFP, whose reticle reads true at any zoom.
 function holdTag(o) {
-  return o.scale === 1 ? '' : `@ ${o.mag}× (SFP, true at ${o.cal}×)`;
+  return o.plane === 'SFP' && o.mag > 0 ? `@ ${o.mag}× (SFP, true at ${o.cal}×)` : '';
 }
 
 function syncOptic() {
   $('sfpWrap').style.display = focalPlane === 'SFP' ? '' : 'none';
+  document.querySelectorAll('.sfp-only').forEach(el => { el.style.display = focalPlane === 'SFP' ? '' : 'none'; });
   const o = opticSettings();
   const msgs = [];
   if (o.min > 0 && o.max > 0) msgs.push(`${o.min}–${o.max}× ${focalPlane}`);
@@ -801,7 +816,7 @@ function render(r, dist, t, labelWord, outEl, breakdownEl, detailEl) {
   const hold = r.offsetCm / unitCm(trajUnit, dist) * o.scale;
   detailEl.textContent =
     `${labelWord} = ${r.offsetCm.toFixed(2)} cm · 1 click = ${r.clickCmAtDist.toFixed(3)} cm @ ${dist} m · raw ${r.rawClicks.toFixed(2)}` +
-    ` · reticle hold ${hold.toFixed(2)} ${trajUnit}${o.scale !== 1 ? ' ' + holdTag(o) : ''}`;
+    ` · reticle hold ${hold.toFixed(2)} ${trajUnit}${holdTag(o) ? ' ' + holdTag(o) : ''}`;
 }
 
 function calc() {
@@ -1257,7 +1272,7 @@ function runTrajectory() {
 
   const uLabel = trajUnit;
   const o = opticSettings();
-  const sfp = o.scale !== 1;
+  const sfp = o.plane === 'SFP';
   let html = '<table><thead><tr>' +
     '<th>Dist m</th><th>Vel m/s</th><th>Energy J</th><th>ToF s</th>' +
     `<th>Drop cm</th><th>Drop ${uLabel}</th>${sfp ? '<th>Elev hold</th>' : ''}<th>Elev clk</th>` +
@@ -1358,7 +1373,7 @@ function runTargets() {
   const shots = solveShots(ctx, dists.map(d => Math.round(d)), t);
   const uLabel = trajUnit;
   const o = opticSettings();
-  const sfp = o.scale !== 1;
+  const sfp = o.plane === 'SFP';
   let over = false;
 
   let html = '<table><thead><tr>' +
@@ -1710,11 +1725,12 @@ $('gearRows').addEventListener('click', e => {
 
 /* ---------------- Wiring ---------------- */
 // Optic changes re-render open tables; other inputs wait for an explicit Calculate.
-const OPTIC_INPUTS = ['clickCustom', 'clicksPerMark', 'clicksPerTurn', 'clicksTotal', 'oZoomMin', 'oZoomMax', 'oCalMag', 'oMag'];
+const OPTIC_INPUTS = ['clickCustom', 'clicksPerMark', 'clicksPerTurn', 'clicksTotal', 'oZoomMin', 'oZoomMax', 'oCalMag', 'oMag', 'oMagDial', 'oMagTable', 'oMagTargets'];
 document.querySelectorAll('section.tab input[id]').forEach(el => {
   if (el.type === 'file' || el.type === 'hidden') return;
   el.addEventListener('input', () => {
     if (el.id === 'clickCustom') applyClick();
+    if (el.classList.contains('mag-in')) syncMag(el.value);
     if (el.id === 'tCaliber') syncCaliber();
     if (['tBc', 'tMv', 'tTemp'].includes(el.id)) updateBcHint();
     if (OPTIC_INPUTS.includes(el.id)) syncOptic();
@@ -1723,6 +1739,11 @@ document.querySelectorAll('section.tab input[id]').forEach(el => {
     if (OPTIC_INPUTS.includes(el.id)) refreshAll();
   });
 });
+
+// The shooting magnification is one value, editable from every results tab.
+function syncMag(v) {
+  document.querySelectorAll('.mag-in').forEach(el => { if (el.value !== v) el.value = v; });
+}
 
 /* ---- Tabs ---- */
 const TAB_KEY = 'bc-tab';
@@ -1764,6 +1785,7 @@ applyClick();
 calc();
 renderTargetRows();
 renderGear();
+syncMag($('oMag').value);
 updateBcHint();
 showTab(localStorage.getItem(TAB_KEY) || 'setup');
 </script>

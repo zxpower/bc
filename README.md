@@ -36,8 +36,9 @@ clicks** value flags corrections (⚠) beyond the turret's travel.
 
 Set the focal plane and zoom range. For an **SFP** scope also set the
 magnification at which the reticle is true (defaults to max zoom, e.g. 40× on a
-10-40×) and the magnification you're shooting at; reticle holds are then
-rescaled (`hold × current / true`) and shown in extra *hold* columns.
+10-40×) and the magnification you're shooting at — editable right on the Turret, Trajectory
+and Targets tabs. Results then include the reticle value to hold over for that
+zoom (`true angle × shooting zoom / true zoom`) in extra *hold* columns.
 
 ## Layout
 

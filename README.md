@@ -12,9 +12,9 @@ divided by the turret's click value at that distance:
 
 - 1 MOA subtends `2.908882 cm` per 100 m
 - 1 MRAD subtends `10 cm` per 100 m
-- Turret click default: `0.25 cm per 100 m` (configurable in *Turret settings*)
+- Turret click default: `0.25 cm per 100 m` (configurable in *Setup → Optic*)
 
-In *Turret settings* you don't need to know the cm-per-100 m value. Pick the
+In *Setup → Optic* you don't need to know the cm-per-100 m value. Pick the
 turret's **units** (MOA, MRAD or cm) and its **click value** (1/8, 1/4, 1/2 or
 1 MOA; 0.05, 0.1 or 0.2 MRAD; 1/4, 1/2 or 1 cm), or choose *Custom…* and type
 any value in those units. The app works out what one click moves at 100 m. For
@@ -26,6 +26,24 @@ example, 1/4 MOA = 0.727 cm and 0.1 MRAD = 1 cm.
 - Clicks = `40.14 / 0.75 ≈ 54` → `13 marks + 2 clicks`
 
 Both the click value and clicks-per-mark are adjustable for other scopes/turrets.
+
+A full turn is set in **clicks**, so turrets whose turn ends mid-mark work too:
+a 100-click 1/8 MOA turret (8 clicks per mark = 12.5 marks per turn) dials
+113 clicks as `1 turn · mark 1 · + 5 clicks`. An optional **total elevation
+clicks** value flags corrections (⚠) beyond the turret's travel.
+
+### Reticle: FFP / SFP
+
+Set the focal plane and zoom range. For an **SFP** scope also set the
+magnification at which the reticle is true (defaults to max zoom, e.g. 40× on a
+10-40×) and the magnification you're shooting at — editable right on the Turret, Trajectory
+and Targets tabs. Results then include the reticle value to hold over for that
+zoom (`true angle × shooting zoom / true zoom`) in extra *hold* columns.
+
+## Layout
+
+The page is split into tabs: **Setup** (saved gear, rifle, optic, load),
+**Weather**, **Turret** (quick click calculator), **Trajectory** and **Targets**.
 
 ## Full trajectory calculator
 
@@ -79,7 +97,7 @@ even range ladder. Add a row per target (minimum one), type its distance, and ge
 the correction for each — rows are lettered **A, B, C, …** so they match how you
 range and call them.
 
-It reuses the load, atmosphere, wind and turret settings from the sections above,
+It reuses the load, atmosphere, wind and turret settings from the other tabs,
 so the numbers agree with the trajectory table. For every target it shows drop
 (cm + MRAD/MOA), elevation clicks to dial UP, drift with the side it pushes to,
 windage clicks with the direction to dial, time of flight and remaining velocity.
@@ -94,7 +112,7 @@ equipment, so you can switch setups without retyping:
 | Kind | What it stores |
 | --- | --- |
 | **Rifle** | caliber, barrel twist, twist direction, sight height over bore, zero distance |
-| **Optic** | turret units + click value, clicks per mark, marks per turn, MRAD/MOA output units |
+| **Optic** | focal plane, zoom range, SFP true magnification, turret units + click value, clicks per mark / per turn / total, MRAD/MOA units |
 | **Load** | bullet weight (grains or grams), muzzle velocity, BC + G1/G7 model, bullet length (optional) |
 
 Pick a profile from the dropdown to load it. The calculators and any tables

@@ -47,13 +47,35 @@ test('4.6 MOA at 300 m = 54 clicks of 0.25cm/100m (README example)', () => {
 test('clicks for angular drop are distance independent', () => {
   assert.strictEqual(solve(4.6, 'MOA', 100, 0.25).clicks, solve(4.6, 'MOA', 800, 0.25).clicks);
 });
-test('breakdown 54 clicks / 4 per mark / 36 per turn', () => {
-  const b = breakdownClicks(54, 4, 36);
+test('breakdown 54 clicks / 4 per mark / 144 per turn', () => {
+  const b = breakdownClicks(54, 4, 144);
   assert.deepStrictEqual(b, { turns: 0, mark: 13, rem: 2 });
 });
 test('breakdown with full turns', () => {
-  const b = breakdownClicks(150, 4, 36);   // 37 marks -> 1 turn + mark 1, +2 clicks
+  const b = breakdownClicks(150, 4, 144);   // 1 turn, then 6 clicks = mark 1 + 2
   assert.deepStrictEqual(b, { turns: 1, mark: 1, rem: 2 });
+});
+test('turn that ends mid-mark: 100-click 1/8 MOA turret, 113 clicks', () => {
+  assert.deepStrictEqual(breakdownClicks(113, 8, 100), { turns: 1, mark: 1, rem: 5 });
+  assert.deepStrictEqual(breakdownClicks(100, 8, 100), { turns: 1, mark: 0, rem: 0 });
+  assert.deepStrictEqual(breakdownClicks(99, 8, 100), { turns: 0, mark: 12, rem: 3 });
+});
+test('breakdown without marks or turns', () => {
+  assert.strictEqual(breakdownClicks(30, 1, 0), null);
+  assert.deepStrictEqual(breakdownClicks(30, 4, 0), { turns: 0, mark: 7, rem: 2 });
+});
+test('travel limit is flagged only when set and exceeded', () => {
+  assert.strictEqual(overTravel(120, 100), true);
+  assert.strictEqual(overTravel(100, 100), false);
+  assert.strictEqual(overTravel(120, 0), false);
+  assert.strictEqual(fmtClicks(113, 8, 100, 100), '113 (1t 1m+5) ⚠');
+  assert.strictEqual(fmtClicks(54, 4, 144, 200), '54 (13m+2)');
+});
+test('SFP reticle scale: true at cal mag, halves at half zoom; FFP always 1', () => {
+  assert.strictEqual(reticleScale('SFP', 40, 40), 1);
+  assert.strictEqual(reticleScale('SFP', 20, 40), 0.5);
+  assert.strictEqual(reticleScale('FFP', 10, 40), 1);
+  assert.strictEqual(reticleScale('SFP', NaN, 40), 1);
 });
 test('solve rejects invalid input', () => {
   assert.strictEqual(solve(1, 'MOA', 0, 0.25), null);
@@ -184,7 +206,7 @@ test('converted BC keeps the trajectory the same bullet', () => {
 });
 
 console.log('target card:');
-const TURRET = { clickCm: 0.25, perMark: 4, perTurn: 36 };
+const TURRET = { clickCm: 0.25, perMark: 4, perTurn: 144, total: 0 };
 const CTX = { p: { ...P }, angle: findZeroAngle({ ...P }), sg: 1.7, massKg: 175 * GRAIN_TO_KG };
 
 test('row labels run A, B, C ... Z, AA, AB', () => {
@@ -194,8 +216,8 @@ test('row labels run A, B, C ... Z, AA, AB', () => {
 test('clicksFor matches the README example', () =>
   assert.strictEqual(clicksFor(40.14, 300, 0.25), 54));
 test('fmtClicks renders a dialable breakdown', () => {
-  assert.strictEqual(fmtClicks(54, 4, 36), '54 (13m+2)');
-  assert.strictEqual(fmtClicks(150, 4, 36), '150 (1t 1m+2)');
+  assert.strictEqual(fmtClicks(54, 4, 144), '54 (13m+2)');
+  assert.strictEqual(fmtClicks(150, 4, 144), '150 (1t 1m+2)');
 });
 test('one target row solves', () => {
   const s = solveShots(CTX, [300], TURRET);
@@ -264,7 +286,7 @@ test('active id pointing at a missing profile is cleared', () =>
   assert.strictEqual(sanitizeGear({ optic: { active: 'gone', items: [] } }).optic.active, null));
 test('each kind snapshots its own fields and toggle', () => {
   assert.deepStrictEqual(Object.keys(gearSnapshot('rifle')).sort(), ['caliberId', 'tCaliber', 'tSight', 'tTwist', 'tZero', 'twistDir']);
-  assert.deepStrictEqual(Object.keys(gearSnapshot('optic')).sort(), ['clickCm', 'clickCustom', 'clickPreset', 'clickUnit', 'clicksPerMark', 'marksPerTurn', 'trajUnit']);
+  assert.deepStrictEqual(Object.keys(gearSnapshot('optic')).sort(), ['clickCm', 'clickCustom', 'clickPreset', 'clickUnit', 'clicksPerMark', 'clicksPerTurn', 'clicksTotal', 'focalPlane', 'oCalMag', 'oZoomMax', 'oZoomMin', 'trajUnit']);
   assert.deepStrictEqual(Object.keys(gearSnapshot('load')).sort(), ['dragModel', 'tBc', 'tLength', 'tMv', 'tWeight', 'weightUnit']);
 });
 test('bullet weight: grains pass through, grams convert (11.34 g = 175 gr)', () => {

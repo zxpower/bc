@@ -142,9 +142,39 @@
   .gear-status.err { color: var(--danger); }
   .gear-io { margin-top: 18px; max-width: 420px; }
   @media (max-width: 700px) { .gear-grid { grid-template-columns: 1fr; } }
+  .tabs {
+    position: sticky; top: 0; z-index: 10; width: 100%; max-width: 900px;
+    display: flex; gap: 6px; padding: 8px; margin: -12px 0 0;
+    background: rgba(14,17,22,.92); backdrop-filter: blur(6px);
+    border: 1px solid var(--border); border-radius: 12px; overflow-x: auto;
+  }
+  .tabs button {
+    flex: 1; padding: 10px 8px; border-radius: 8px; cursor: pointer; white-space: nowrap;
+    background: transparent; border: 1px solid transparent; color: var(--muted);
+    font-size: 14px; font-weight: 600;
+  }
+  .tabs button.active { background: var(--accent); color: #04121f; }
+  section.tab { display: none; width: 100%; flex-direction: column; align-items: center; gap: 20px; }
+  section.tab.active { display: flex; }
+  .card .grid2, .card .grid3 { margin-top: 10px; }
+  @media (max-width: 600px) {
+    body { padding: 12px; gap: 14px; }
+    .card { padding: 18px; }
+    .grid3 { grid-template-columns: 1fr 1fr; }
+    .tabs button { padding: 10px 6px; font-size: 13px; }
+  }
 </style>
 </head>
 <body>
+<nav class="tabs" id="tabs">
+  <button data-tab="setup">Setup</button>
+  <button data-tab="weather">Weather</button>
+  <button data-tab="dial">Turret</button>
+  <button data-tab="table">Trajectory</button>
+  <button data-tab="targets">Targets</button>
+</nav>
+
+<section class="tab" data-tab="setup">
 <div class="card wide" id="gearCard">
   <h1>Saved gear</h1>
   <div class="sub">Save rifles, optics and ammo loads by name and switch between them.
@@ -158,9 +188,193 @@
   <div class="gear-status" id="gearMsg"></div>
 </div>
 
+<div class="card wide" id="rifleCard">
+  <h1>Rifle</h1>
+  <div class="grid2">
+    <div>
+      <label for="tCaliberSel">Caliber</label>
+      <select id="tCaliberSel"></select>
+      <div id="tCaliberCustom" style="display:none">
+        <label for="tCaliber">Bullet diameter (mm)</label>
+        <input id="tCaliber" type="number" inputmode="decimal" value="7.823" min="0" step="0.001">
+      </div>
+      <div class="detail" id="tCaliberHint"></div>
+    </div>
+    <div>
+      <label>Barrel twist (1 turn in … in)</label>
+      <input id="tTwist" type="number" inputmode="decimal" value="11" min="0" step="0.5">
+    </div>
+  </div>
+  <div class="grid3">
+    <div>
+      <label>Twist direction</label>
+      <div class="toggle">
+        <button id="twRBtn" class="active" onclick="setTwist('R')">Right</button>
+        <button id="twLBtn" onclick="setTwist('L')">Left</button>
+      </div>
+    </div>
+    <div>
+      <label>Zero distance (m)</label>
+      <input id="tZero" type="number" inputmode="decimal" value="100" min="1" step="1">
+    </div>
+    <div>
+      <label>Sight height over bore (cm)</label>
+      <input id="tSight" type="number" inputmode="decimal" value="4.5" min="0" step="0.1">
+    </div>
+  </div>
+</div>
+
+<div class="card wide" id="opticCard">
+  <h1>Optic</h1>
+  <div class="section-title">Reticle</div>
+  <div class="grid2">
+    <div>
+      <label>Focal plane</label>
+      <div class="toggle">
+        <button id="fpFfpBtn" class="active" onclick="setFocalPlane('FFP')">FFP</button>
+        <button id="fpSfpBtn" onclick="setFocalPlane('SFP')">SFP</button>
+      </div>
+    </div>
+    <div>
+      <label>Reticle &amp; table units</label>
+      <div class="toggle">
+        <button id="tuMradBtn" class="active" onclick="setTrajUnit('MRAD')">MRAD</button>
+        <button id="tuMoaBtn" onclick="setTrajUnit('MOA')">MOA</button>
+      </div>
+    </div>
+  </div>
+  <div class="grid2">
+    <div>
+      <label>Zoom from (×)</label>
+      <input id="oZoomMin" type="number" inputmode="decimal" value="5" min="1" step="0.5">
+    </div>
+    <div>
+      <label>Zoom to (×)</label>
+      <input id="oZoomMax" type="number" inputmode="decimal" value="25" min="1" step="0.5">
+    </div>
+  </div>
+  <div class="grid2" id="sfpWrap" style="display:none">
+    <div>
+      <label>Reticle true at (×)</label>
+      <input id="oCalMag" type="number" inputmode="decimal" value="" min="1" step="0.5" placeholder="max zoom">
+    </div>
+    <div>
+      <label>Current magnification (×)</label>
+      <input id="oMag" type="number" inputmode="decimal" value="" min="1" step="0.5" placeholder="max zoom">
+    </div>
+  </div>
+  <div class="detail" id="opticHint"></div>
+
+  <div class="section-title">Turret</div>
+  <label>Turret units</label>
+  <div class="toggle">
+    <button id="cuMoaBtn" onclick="setClickUnit('MOA')">MOA</button>
+    <button id="cuMradBtn" onclick="setClickUnit('MRAD')">MRAD</button>
+    <button id="cuCmBtn" class="active" onclick="setClickUnit('CM')">cm</button>
+  </div>
+  <label for="clickPreset">Click value</label>
+  <select id="clickPreset"></select>
+  <div id="clickCustomWrap" style="display:none">
+    <label for="clickCustom" id="clickCustomLabel">Custom click value</label>
+    <input id="clickCustom" type="number" inputmode="decimal" min="0" step="0.001">
+  </div>
+  <!-- Derived: what one click moves the impact at 100 m. The turret math reads this. -->
+  <input id="clickCm" type="hidden" value="0.25">
+  <div class="detail" id="clickHint"></div>
+  <div class="grid3">
+    <div>
+      <label>Clicks per numbered mark</label>
+      <input id="clicksPerMark" type="number" inputmode="numeric" value="4" min="1" step="1">
+    </div>
+    <div>
+      <label>Clicks per full turn</label>
+      <input id="clicksPerTurn" type="number" inputmode="numeric" value="144" min="1" step="1">
+    </div>
+    <div>
+      <label>Total elevation clicks</label>
+      <input id="clicksTotal" type="number" inputmode="numeric" value="" min="1" step="1" placeholder="optional">
+    </div>
+  </div>
+  <div class="detail" id="turretHint"></div>
+</div>
+
+<div class="card wide" id="loadCard">
+  <h1>Load</h1>
+  <div class="grid3">
+    <div>
+      <label>Bullet weight</label>
+      <div class="row">
+        <div><input id="tWeight" type="number" inputmode="decimal" value="175" min="0" step="1"></div>
+        <div class="toggle" style="flex:0 0 96px;margin-top:0">
+          <button id="wGrBtn" class="active" onclick="setWeightUnit('GR')">gr</button>
+          <button id="wGBtn" onclick="setWeightUnit('G')">g</button>
+        </div>
+      </div>
+    </div>
+    <div>
+      <label>Muzzle velocity (m/s)</label>
+      <input id="tMv" type="number" inputmode="decimal" value="800" min="0" step="1">
+    </div>
+    <div>
+      <label>Bullet length (mm, optional)</label>
+      <input id="tLength" type="number" inputmode="decimal" value="32.8" min="0" step="0.1" placeholder="for stability">
+    </div>
+  </div>
+  <div class="grid2">
+    <div>
+      <label>Ballistic coefficient</label>
+      <input id="tBc" type="number" inputmode="decimal" value="0.243" min="0.001" step="0.001">
+      <div class="detail" id="tBcHint"></div>
+    </div>
+    <div>
+      <label>BC model</label>
+      <div class="toggle">
+        <button id="g1Btn" onclick="setDrag('G1')">G1</button>
+        <button id="g7Btn" class="active" onclick="setDrag('G7')">G7</button>
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+
+<section class="tab" data-tab="weather">
+<div class="card wide" id="weatherCard">
+  <h1>Weather conditions</h1>
+  <div class="sub">Used by the trajectory table and the target card.</div>
+  <div class="section-title">Atmosphere</div>
+  <div class="grid3">
+    <div>
+      <label>Temperature (&deg;C)</label>
+      <input id="tTemp" type="number" inputmode="decimal" value="15" step="1">
+    </div>
+    <div>
+      <label>Pressure (hPa)</label>
+      <input id="tPress" type="number" inputmode="decimal" value="1013" step="1">
+    </div>
+    <div>
+      <label>Humidity (%)</label>
+      <input id="tHum" type="number" inputmode="decimal" value="50" min="0" max="100" step="1">
+    </div>
+  </div>
+  <div class="section-title">Wind</div>
+  <div class="grid2">
+    <div>
+      <label>Wind speed (m/s)</label>
+      <input id="tWind" type="number" inputmode="decimal" value="4" min="0" step="0.1">
+    </div>
+    <div>
+      <label>Wind from (clock hr, 12=head)</label>
+      <input id="tWindDir" type="number" inputmode="decimal" value="3" min="0" max="12" step="0.5">
+    </div>
+  </div>
+</div>
+</section>
+
+<section class="tab" data-tab="dial">
 <div class="card" id="card1">
   <h1>Ballistic Turret Calculator</h1>
-  <div class="sub">How many clicks to dial for a given drop &amp; distance.</div>
+  <div class="sub">How many clicks to dial for a given drop &amp; distance.
+    Turret and reticle come from Setup → Optic.</div>
 
   <label>Distance (m)</label>
   <input id="distance" type="number" inputmode="decimal" value="300" min="0" step="1">
@@ -202,141 +416,14 @@
     <div class="breakdown" id="wBreakdown"></div>
     <div class="detail" id="wDetail"></div>
   </div>
-
-  <details>
-    <summary>Turret settings</summary>
-    <div class="advanced">
-      <label>Turret units</label>
-      <div class="toggle">
-        <button id="cuMoaBtn" onclick="setClickUnit('MOA')">MOA</button>
-        <button id="cuMradBtn" onclick="setClickUnit('MRAD')">MRAD</button>
-        <button id="cuCmBtn" class="active" onclick="setClickUnit('CM')">cm</button>
-      </div>
-      <label for="clickPreset">Click value</label>
-      <select id="clickPreset"></select>
-      <div id="clickCustomWrap" style="display:none">
-        <label for="clickCustom" id="clickCustomLabel">Custom click value</label>
-        <input id="clickCustom" type="number" inputmode="decimal" min="0" step="0.001">
-      </div>
-      <!-- Derived: what one click moves the impact at 100 m. The turret math reads this. -->
-      <input id="clickCm" type="hidden" value="0.25">
-      <div class="detail" id="clickHint"></div>
-      <label>Clicks per numbered mark</label>
-      <input id="clicksPerMark" type="number" inputmode="numeric" value="4" min="1" step="1">
-      <label>Marks per full turn</label>
-      <input id="marksPerTurn" type="number" inputmode="numeric" value="36" min="1" step="1">
-    </div>
-  </details>
 </div>
+</section>
 
+<section class="tab" data-tab="table">
 <div class="card wide" id="card2">
   <h1>Full Trajectory Calculator</h1>
-  <div class="sub">Point-mass solver (G1/G7 drag) — produces a drop &amp; wind table with scope adjustments.</div>
-
-  <div class="section-title">Load</div>
-  <div class="grid3">
-    <div>
-      <label>Bullet weight</label>
-      <div class="row">
-        <div><input id="tWeight" type="number" inputmode="decimal" value="175" min="0" step="1"></div>
-        <div class="toggle" style="flex:0 0 96px;margin-top:0">
-          <button id="wGrBtn" class="active" onclick="setWeightUnit('GR')">gr</button>
-          <button id="wGBtn" onclick="setWeightUnit('G')">g</button>
-        </div>
-      </div>
-    </div>
-    <div>
-      <label>Muzzle velocity (m/s)</label>
-      <input id="tMv" type="number" inputmode="decimal" value="800" min="0" step="1">
-    </div>
-    <div>
-      <label>Bullet length (mm, optional)</label>
-      <input id="tLength" type="number" inputmode="decimal" value="32.8" min="0" step="0.1" placeholder="for stability">
-    </div>
-  </div>
-  <div class="grid2" style="margin-top:10px">
-    <div>
-      <label>Ballistic coefficient</label>
-      <input id="tBc" type="number" inputmode="decimal" value="0.243" min="0.001" step="0.001">
-      <div class="detail" id="tBcHint"></div>
-    </div>
-    <div>
-      <label>BC model</label>
-      <div class="toggle">
-        <button id="g1Btn" onclick="setDrag('G1')">G1</button>
-        <button id="g7Btn" class="active" onclick="setDrag('G7')">G7</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="section-title">Rifle &amp; scope</div>
-  <div class="grid2">
-    <div>
-      <label for="tCaliberSel">Caliber</label>
-      <select id="tCaliberSel"></select>
-      <div id="tCaliberCustom" style="display:none">
-        <label for="tCaliber">Bullet diameter (mm)</label>
-        <input id="tCaliber" type="number" inputmode="decimal" value="7.823" min="0" step="0.001">
-      </div>
-      <div class="detail" id="tCaliberHint"></div>
-    </div>
-    <div>
-      <label>Barrel twist (1 turn in … in)</label>
-      <input id="tTwist" type="number" inputmode="decimal" value="11" min="0" step="0.5">
-    </div>
-  </div>
-  <div class="grid2" style="margin-top:10px">
-    <div>
-      <label>Zero distance (m)</label>
-      <input id="tZero" type="number" inputmode="decimal" value="100" min="1" step="1">
-    </div>
-    <div>
-      <label>Sight height over bore (cm)</label>
-      <input id="tSight" type="number" inputmode="decimal" value="4.5" min="0" step="0.1">
-    </div>
-  </div>
-  <div class="grid2" style="margin-top:10px">
-    <div>
-      <label>Twist direction</label>
-      <div class="toggle">
-        <button id="twRBtn" class="active" onclick="setTwist('R')">Right</button>
-        <button id="twLBtn" onclick="setTwist('L')">Left</button>
-      </div>
-    </div>
-    <div>
-      <label>Output units</label>
-      <div class="toggle">
-        <button id="tuMradBtn" class="active" onclick="setTrajUnit('MRAD')">MRAD</button>
-        <button id="tuMoaBtn" onclick="setTrajUnit('MOA')">MOA</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="section-title">Atmosphere &amp; wind</div>
-  <div class="grid3">
-    <div>
-      <label>Temperature (&deg;C)</label>
-      <input id="tTemp" type="number" inputmode="decimal" value="15" step="1">
-    </div>
-    <div>
-      <label>Pressure (hPa)</label>
-      <input id="tPress" type="number" inputmode="decimal" value="1013" step="1">
-    </div>
-    <div>
-      <label>Humidity (%)</label>
-      <input id="tHum" type="number" inputmode="decimal" value="50" min="0" max="100" step="1">
-    </div>
-  </div>
-  <div class="grid2" style="margin-top:10px">
-    <div>
-      <label>Wind speed (m/s)</label>
-      <input id="tWind" type="number" inputmode="decimal" value="4" min="0" step="0.1">
-    </div>
-    <div>
-      <label>Wind from (clock hr, 12=head)</label>
-      <input id="tWindDir" type="number" inputmode="decimal" value="3" min="0" max="12" step="0.5">
-    </div>
-  </div>
+  <div class="sub">Point-mass solver (G1/G7 drag) — drop &amp; wind table with scope adjustments,
+    using the rifle, optic, load and weather from the other tabs.</div>
 
   <div class="section-title">Range</div>
   <div class="grid3">
@@ -361,11 +448,13 @@
   <div class="table-wrap" id="tTableWrap"></div>
   <div class="tcards" id="tCards"></div>
 </div>
+</section>
 
+<section class="tab" data-tab="targets">
 <div class="card wide" id="card3">
   <h1>Target Card</h1>
-  <div class="sub">Corrections for a set of known targets — uses the load, atmosphere,
-    wind and turret settings from the calculators above.</div>
+  <div class="sub">Corrections for a set of known targets — uses the rifle, optic, load
+    and weather from the other tabs.</div>
 
   <label>Target distances (m)</label>
   <div id="targetRows"></div>
@@ -377,6 +466,7 @@
   <div class="table-wrap" id="gTableWrap"></div>
   <div class="tcards" id="gCards"></div>
 </div>
+</section>
 
 <footer>
   <p class="disclaimer">
@@ -410,11 +500,12 @@ let weightUnit = 'GR';   // bullet weight entered in grains (GR) or grams (G)
 let caliberId = '308';   // preset from CALIBERS, or '' for a custom diameter
 let clickUnit = 'CM';     // turret graduation: MOA, MRAD or CM (cm per 100 m)
 let clickPreset = '0.25'; // one of CLICK_PRESETS[clickUnit], or '' for a custom value
+let focalPlane = 'FFP';   // FFP: reticle true at any zoom; SFP: only at oCalMag
 
 const STATE_KEY = 'bc-state-v1';
 
 function saveState() {
-  const s = { elevUnit, windUnit, windDir, dragModel, twistDir, trajUnit, weightUnit, caliberId, clickUnit, clickPreset, targets, inputs: {} };
+  const s = { elevUnit, windUnit, windDir, dragModel, twistDir, trajUnit, weightUnit, caliberId, clickUnit, clickPreset, focalPlane, targets, inputs: {} };
   document.querySelectorAll('input').forEach(el => { if (el.id) s.inputs[el.id] = el.value; });
   try { localStorage.setItem(STATE_KEY, JSON.stringify(s)); } catch (e) { /* private mode */ }
   updateGearStatus();
@@ -439,6 +530,8 @@ function loadState() {
   if (s.caliberId === '' || caliberById(s.caliberId)) caliberId = s.caliberId;
   else if (s.inputs && s.inputs.tCaliber) caliberId = '';
   if (!restoreClick(s.clickUnit, s.clickPreset) && s.inputs && s.inputs.clickCm) migrateClick(s.inputs.clickCm);
+  if (s.focalPlane === 'FFP' || s.focalPlane === 'SFP') focalPlane = s.focalPlane;
+  migrateTurn(s.inputs || {});
   if (Array.isArray(s.targets) && s.targets.length) targets = s.targets.map(v => String(v ?? ''));
 }
 
@@ -459,8 +552,11 @@ function syncToggles() {
   $('tuMoaBtn').classList.toggle('active', trajUnit === 'MOA');
   $('wGrBtn').classList.toggle('active', weightUnit === 'GR');
   $('wGBtn').classList.toggle('active', weightUnit === 'G');
+  $('fpFfpBtn').classList.toggle('active', focalPlane === 'FFP');
+  $('fpSfpBtn').classList.toggle('active', focalPlane === 'SFP');
   syncCaliber();
   syncClick();
+  syncOptic();
 }
 
 /* ---------------- Card 1: turret click calculator ---------------- */
@@ -513,6 +609,7 @@ function applyClick() {
   const cm = clickCmFrom(clickUnit, clickPreset, $('clickCustom').value);
   if (cm > 0) $('clickCm').value = Math.round(cm * 1e6) / 1e6;
   syncClick();
+  syncOptic();
 }
 
 function syncClick() {
@@ -602,18 +699,86 @@ function solve(angVal, unit, dist, clickVal) {
   return { clicks: Math.round(rawClicks), rawClicks, offsetCm, clickCmAtDist };
 }
 
-// Break a click count into turns / marks / remaining clicks.
+/* Break a click count into turns / marks / remaining clicks. A turn is counted
+   in clicks, not marks: a 100-click 1/8 MOA turret has 12.5 marks per turn, so the
+   numbering restarts mid-mark (113 clicks = 1 turn, mark 1, + 5 clicks). */
 function breakdownClicks(clicks, perMark, perTurn) {
-  if (!(perMark > 1)) return null;
-  const totalMarks = Math.floor(clicks / perMark);
-  const rem = clicks % perMark;
-  if (perTurn > 1) {
-    return { turns: Math.floor(totalMarks / perTurn), mark: totalMarks % perTurn, rem };
-  }
-  return { turns: 0, mark: totalMarks, rem };
+  const pm = perMark > 1 ? perMark : 1;
+  const pt = perTurn > 0 ? perTurn : 0;
+  if (pm === 1 && !pt) return null;
+  const turns = pt ? Math.floor(clicks / pt) : 0;
+  const inTurn = pt ? clicks % pt : clicks;
+  return { turns, mark: Math.floor(inTurn / pm), rem: inTurn % pm };
 }
 
-function render(r, dist, perMark, perTurn, labelWord, outEl, breakdownEl, detailEl) {
+// State saved before clicks-per-turn existed stored whole marks per turn.
+function migrateTurn(inputs) {
+  if (inputs.clicksPerTurn || !inputs.marksPerTurn) return;
+  const v = parseInt(inputs.marksPerTurn, 10) * (parseInt(inputs.clicksPerMark, 10) || 1);
+  if (v > 0) $('clicksPerTurn').value = v;
+}
+
+const overTravel = (clicks, total) => total > 0 && clicks > total;
+
+/* ---- Reticle ----
+   An SFP reticle only subtends its nominal value at one magnification; at zoom M
+   each division covers nominal × cal / M, so a hold of A reads as A × M / cal
+   divisions. FFP scales with the image and always reads true. */
+function reticleScale(plane, mag, cal) {
+  if (plane !== 'SFP' || !(mag > 0) || !(cal > 0)) return 1;
+  return mag / cal;
+}
+
+function opticSettings() {
+  const num = id => parseFloat($(id).value);
+  const max = num('oZoomMax');
+  const cal = num('oCalMag') > 0 ? num('oCalMag') : max;
+  const mag = num('oMag') > 0 ? num('oMag') : max;
+  return { plane: focalPlane, min: num('oZoomMin'), max, cal, mag, scale: reticleScale(focalPlane, mag, cal) };
+}
+
+// "@ 10× (SFP, true at 40×)" — empty when the reticle reads true.
+function holdTag(o) {
+  return o.scale === 1 ? '' : `@ ${o.mag}× (SFP, true at ${o.cal}×)`;
+}
+
+function syncOptic() {
+  $('sfpWrap').style.display = focalPlane === 'SFP' ? '' : 'none';
+  const o = opticSettings();
+  const msgs = [];
+  if (o.min > 0 && o.max > 0) msgs.push(`${o.min}–${o.max}× ${focalPlane}`);
+  if (focalPlane === 'SFP') {
+    if (o.cal > 0) msgs.push(`reticle true at ${o.cal}×`);
+    if (o.scale !== 1) msgs.push(`at ${o.mag}× holds read ×${+o.scale.toFixed(3)} (1 ${trajUnit} on reticle = ${+(1 / o.scale).toFixed(3)} ${trajUnit})`);
+    if (o.min > 0 && o.max > 0 && (o.mag < o.min || o.mag > o.max)) msgs.push('current magnification is outside the zoom range');
+  } else {
+    msgs.push('reticle reads true at any zoom');
+  }
+  $('opticHint').textContent = msgs.join(' · ');
+
+  const cm = parseFloat($('clickCm').value);
+  const pm = parseInt($('clicksPerMark').value, 10);
+  const pt = parseInt($('clicksPerTurn').value, 10);
+  const total = parseInt($('clicksTotal').value, 10);
+  const u = clickUnit === 'CM' ? 'cm/100 m' : clickUnit;
+  const perClick = cm > 0 ? cm / unitCm(clickUnit, 100) : NaN;
+  const amt = n => `${+(n * perClick).toFixed(2)} ${u}`;
+  const t = [];
+  if (pt > 0 && pm > 0) t.push(`${+(pt / pm).toFixed(2)} marks per turn`);
+  if (pt > 0 && perClick > 0) t.push(`1 turn = ${amt(pt)}`);
+  if (total > 0 && perClick > 0) t.push(`total ${amt(total)}${pt > 0 ? ` = ${+(total / pt).toFixed(2)} turns` : ''}`);
+  $('turretHint').textContent = t.join(' · ');
+}
+
+function setFocalPlane(fp) {
+  focalPlane = fp === 'SFP' ? 'SFP' : 'FFP';
+  syncToggles();
+  calc();
+  saveState();
+  refreshAll();
+}
+
+function render(r, dist, t, labelWord, outEl, breakdownEl, detailEl) {
   if (!r) {
     outEl.textContent = '–';
     breakdownEl.textContent = '';
@@ -621,32 +786,35 @@ function render(r, dist, perMark, perTurn, labelWord, outEl, breakdownEl, detail
     return;
   }
   outEl.innerHTML = r.clicks + ' <span>clicks</span>';
-  const b = breakdownClicks(r.clicks, perMark, perTurn);
+  const b = breakdownClicks(r.clicks, t.perMark, t.perTurn);
+  const parts = [];
   if (b) {
-    const parts = [];
     if (b.turns > 0) parts.push(`${b.turns} turn${b.turns !== 1 ? 's' : ''}`);
     parts.push(`mark ${b.mark}`);
     parts.push(`+ ${b.rem} click${b.rem !== 1 ? 's' : ''}`);
-    breakdownEl.textContent = parts.join(' · ');
-  } else {
-    breakdownEl.textContent = '';
   }
+  breakdownEl.textContent = parts.join(' · ');
+  if (overTravel(r.clicks, t.total)) {
+    breakdownEl.innerHTML += `<div style="color:var(--danger)">⚠ beyond the turret's ${t.total} clicks of travel — hold the rest</div>`;
+  }
+  const o = opticSettings();
+  const hold = r.offsetCm / unitCm(trajUnit, dist) * o.scale;
   detailEl.textContent =
-    `${labelWord} = ${r.offsetCm.toFixed(2)} cm · 1 click = ${r.clickCmAtDist.toFixed(3)} cm @ ${dist} m · raw ${r.rawClicks.toFixed(2)}`;
+    `${labelWord} = ${r.offsetCm.toFixed(2)} cm · 1 click = ${r.clickCmAtDist.toFixed(3)} cm @ ${dist} m · raw ${r.rawClicks.toFixed(2)}` +
+    ` · reticle hold ${hold.toFixed(2)} ${trajUnit}${o.scale !== 1 ? ' ' + holdTag(o) : ''}`;
 }
 
 function calc() {
   const dist = parseFloat($('distance').value);
-  const clickVal = parseFloat($('clickCm').value);
-  const perMark = parseInt($('clicksPerMark').value, 10);
-  const perTurn = parseInt($('marksPerTurn').value, 10);
+  const t = turretSettings();
+  const clickVal = t.clickCm;
 
   render(solve(parseFloat($('drop').value), elevUnit, dist, clickVal),
-    dist, perMark, perTurn, 'Drop', $('clicksOut'), $('breakdown'), $('detail'));
+    dist, t, 'Drop', $('clicksOut'), $('breakdown'), $('detail'));
 
   $('windDirLabel').textContent = `Windage (dial ${windDir === 'L' ? 'LEFT' : 'RIGHT'})`;
   render(solve(parseFloat($('wind').value), windUnit, dist, clickVal),
-    dist, perMark, perTurn, 'Drift', $('wClicksOut'), $('wBreakdown'), $('wDetail'));
+    dist, { ...t, total: 0 }, 'Drift', $('wClicksOut'), $('wBreakdown'), $('wDetail'));
 }
 
 /* ---------------- Full trajectory solver ---------------- */
@@ -830,7 +998,7 @@ function setWeightUnit(u) {
 }
 
 function setTwist(d) { twistDir = d; syncToggles(); saveState(); refreshAll(); }
-function setTrajUnit(u) { trajUnit = u; syncToggles(); saveState(); refreshAll(); }
+function setTrajUnit(u) { trajUnit = u; syncToggles(); calc(); saveState(); refreshAll(); }
 
 // Miller gyroscopic stability factor (Sg), corrected for velocity & atmosphere.
 function millerSg(grains, dIn, lenIn, twistIn, mvFps, tempF, pressInHg) {
@@ -944,7 +1112,8 @@ function turretSettings() {
   return {
     clickCm: parseFloat($('clickCm').value) || 0.25,
     perMark: parseInt($('clicksPerMark').value, 10) || 1,
-    perTurn: parseInt($('marksPerTurn').value, 10) || 1
+    perTurn: parseInt($('clicksPerTurn').value, 10) || 0,
+    total: parseInt($('clicksTotal').value, 10) || 0
   };
 }
 
@@ -953,13 +1122,16 @@ function clicksFor(offsetCm, dist, clickCmVal) {
   return clickCmAtDist > 0 ? Math.round(offsetCm / clickCmAtDist) : 0;
 }
 
-// "54 (13m+2)" or "150 (1t 1m+2)" — dialable directly on the turret.
-function fmtClicks(n, perMark, perTurn) {
+// "54 (13m+2)" or "150 (1t 1m+2)" — dialable directly on the turret; ⚠ past `total`.
+function fmtClicks(n, perMark, perTurn, total) {
   const a = Math.abs(n);
   const b = breakdownClicks(a, perMark, perTurn);
-  if (!b) return String(a);
-  return a + ' (' + (b.turns > 0 ? b.turns + 't ' : '') + b.mark + 'm+' + b.rem + ')';
+  const warn = overTravel(a, total) ? ' ⚠' : '';
+  if (!b) return a + warn;
+  return a + ' (' + (b.turns > 0 ? b.turns + 't ' : '') + b.mark + 'm+' + b.rem + ')' + warn;
 }
+
+const TRAVEL_NOTE = t => `⚠ = beyond the turret's ${t.total} clicks of elevation travel — hold the rest on the reticle.`;
 
 const angOf = (offsetCm, dist) => dist > 0 ? offsetCm / unitCm(trajUnit, dist) : 0;
 
@@ -1084,12 +1256,15 @@ function runTrajectory() {
   renderStability(ctx.sg);
 
   const uLabel = trajUnit;
+  const o = opticSettings();
+  const sfp = o.scale !== 1;
   let html = '<table><thead><tr>' +
     '<th>Dist m</th><th>Vel m/s</th><th>Energy J</th><th>ToF s</th>' +
-    `<th>Drop cm</th><th>Drop ${uLabel}</th><th>Elev clk</th>` +
-    `<th>Wind cm</th><th>Wind ${uLabel}</th><th>Wind clk</th>` +
+    `<th>Drop cm</th><th>Drop ${uLabel}</th>${sfp ? '<th>Elev hold</th>' : ''}<th>Elev clk</th>` +
+    `<th>Wind cm</th><th>Wind ${uLabel}</th>${sfp ? '<th>Wind hold</th>' : ''}<th>Wind clk</th>` +
     '</tr></thead><tbody>';
   let cards = '';
+  let over = false;
 
   for (const raw_r of raw) {
     const s = deriveShot(ctx, raw_r, t);
@@ -1097,20 +1272,25 @@ function runTrajectory() {
     html += '<tr>' +
       `<td>${dist}</td><td>${s.v.toFixed(0)}</td><td>${s.energy.toFixed(0)}</td><td>${s.tof.toFixed(2)}</td>` +
       `<td>${s.dropCm.toFixed(1)}</td><td>${angOf(s.dropCm, dist).toFixed(2)}</td>` +
-      `<td>${fmtClicks(s.eClk, t.perMark, t.perTurn)}</td>` +
+      (sfp ? `<td>${(angOf(s.dropCm, dist) * o.scale).toFixed(2)}</td>` : '') +
+      `<td>${fmtClicks(s.eClk, t.perMark, t.perTurn, t.total)}</td>` +
       `<td>${Math.abs(s.windCm).toFixed(1)} ${s.side}</td><td>${Math.abs(angOf(s.windCm, dist)).toFixed(2)}</td>` +
+      (sfp ? `<td>${Math.abs(angOf(s.windCm, dist) * o.scale).toFixed(2)}</td>` : '') +
       `<td>${fmtClicks(s.wClk, t.perMark, t.perTurn)} ${s.side}</td>` +
       '</tr>';
+    if (overTravel(s.eClk, t.total)) over = true;
     cards +=
       `<div class="tcard"><div class="d">${dist} m</div>` +
-      `<div>Drop ${s.dropCm.toFixed(1)} cm · ${angOf(s.dropCm, dist).toFixed(2)} ${uLabel} · dial UP ${fmtClicks(s.eClk, t.perMark, t.perTurn)}</div>` +
-      `<div>Wind ${Math.abs(s.windCm).toFixed(1)} cm ${s.side} · ${Math.abs(angOf(s.windCm, dist)).toFixed(2)} ${uLabel} · dial ${s.side === 'R' ? 'LEFT' : 'RIGHT'} ${fmtClicks(s.wClk, t.perMark, t.perTurn)}</div>` +
+      `<div>Drop ${s.dropCm.toFixed(1)} cm · ${angOf(s.dropCm, dist).toFixed(2)} ${uLabel}${sfp ? ` (hold ${(angOf(s.dropCm, dist) * o.scale).toFixed(2)})` : ''} · dial UP ${fmtClicks(s.eClk, t.perMark, t.perTurn, t.total)}</div>` +
+      `<div>Wind ${Math.abs(s.windCm).toFixed(1)} cm ${s.side} · ${Math.abs(angOf(s.windCm, dist)).toFixed(2)} ${uLabel}${sfp ? ` (hold ${Math.abs(angOf(s.windCm, dist) * o.scale).toFixed(2)})` : ''} · dial ${s.side === 'R' ? 'LEFT' : 'RIGHT'} ${fmtClicks(s.wClk, t.perMark, t.perTurn)}</div>` +
       `<div class="m">${s.v.toFixed(0)} m/s · ${s.energy.toFixed(0)} J · ${s.tof.toFixed(2)} s</div></div>`;
   }
   html += '</tbody></table>';
   wrap.innerHTML = html;
   cardsEl.innerHTML = cards;
   wrap.dataset.has = '1';
+  noteEl.textContent = [noteEl.textContent, over ? TRAVEL_NOTE(t) : '',
+    sfp ? `Hold columns are reticle readings ${holdTag(o)}.` : ''].filter(Boolean).join(' ');
 }
 
 /* ---------------- Card 3: target card ---------------- */
@@ -1177,11 +1357,14 @@ function runTargets() {
   const t = turretSettings();
   const shots = solveShots(ctx, dists.map(d => Math.round(d)), t);
   const uLabel = trajUnit;
+  const o = opticSettings();
+  const sfp = o.scale !== 1;
+  let over = false;
 
   let html = '<table><thead><tr>' +
     '<th>Target</th><th>Dist m</th>' +
-    `<th>Drop cm</th><th>Elev ${uLabel}</th><th>Elev clk (UP)</th>` +
-    `<th>Drift cm</th><th>Wind ${uLabel}</th><th>Wind clk (dial)</th>` +
+    `<th>Drop cm</th><th>Elev ${uLabel}</th>${sfp ? '<th>Elev hold</th>' : ''}<th>Elev clk (UP)</th>` +
+    `<th>Drift cm</th><th>Wind ${uLabel}</th>${sfp ? '<th>Wind hold</th>' : ''}<th>Wind clk (dial)</th>` +
     '<th>ToF s</th><th>Vel m/s</th>' +
     '</tr></thead><tbody>';
   let cards = '';
@@ -1193,7 +1376,7 @@ function runTargets() {
       unreachable.push(name);
       const shown = dists[i] > 0 ? Math.round(dists[i]) : '–';
       html += `<tr><td>${name}</td><td>${shown}</td>` +
-        '<td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td></tr>';
+        '<td>–</td>'.repeat(sfp ? 10 : 8) + '</tr>';
       cards += `<div class="tcard"><div class="d">${name} · ${shown} m</div>` +
         '<div class="m">No solution — set a distance the bullet can reach.</div></div>';
       return;
@@ -1203,16 +1386,19 @@ function runTargets() {
     html += '<tr>' +
       `<td>${name}</td><td>${dist}</td>` +
       `<td>${s.dropCm.toFixed(1)}</td><td>${angOf(s.dropCm, dist).toFixed(2)}</td>` +
-      `<td>${fmtClicks(s.eClk, t.perMark, t.perTurn)}</td>` +
+      (sfp ? `<td>${(angOf(s.dropCm, dist) * o.scale).toFixed(2)}</td>` : '') +
+      `<td>${fmtClicks(s.eClk, t.perMark, t.perTurn, t.total)}</td>` +
       `<td>${Math.abs(s.windCm).toFixed(1)} ${s.side}</td>` +
       `<td>${Math.abs(angOf(s.windCm, dist)).toFixed(2)}</td>` +
+      (sfp ? `<td>${Math.abs(angOf(s.windCm, dist) * o.scale).toFixed(2)}</td>` : '') +
       `<td>${fmtClicks(s.wClk, t.perMark, t.perTurn)} ${dialSide.charAt(0)}</td>` +
       `<td>${s.tof.toFixed(2)}</td><td>${s.v.toFixed(0)}</td>` +
       '</tr>';
+    if (overTravel(s.eClk, t.total)) over = true;
     cards +=
       `<div class="tcard"><div class="d">${name} · ${dist} m</div>` +
-      `<div>Drop ${s.dropCm.toFixed(1)} cm · ${angOf(s.dropCm, dist).toFixed(2)} ${uLabel} · dial UP ${fmtClicks(s.eClk, t.perMark, t.perTurn)}</div>` +
-      `<div>Wind ${Math.abs(s.windCm).toFixed(1)} cm ${s.side} · ${Math.abs(angOf(s.windCm, dist)).toFixed(2)} ${uLabel} · dial ${dialSide} ${fmtClicks(s.wClk, t.perMark, t.perTurn)}</div>` +
+      `<div>Drop ${s.dropCm.toFixed(1)} cm · ${angOf(s.dropCm, dist).toFixed(2)} ${uLabel}${sfp ? ` (hold ${(angOf(s.dropCm, dist) * o.scale).toFixed(2)})` : ''} · dial UP ${fmtClicks(s.eClk, t.perMark, t.perTurn, t.total)}</div>` +
+      `<div>Wind ${Math.abs(s.windCm).toFixed(1)} cm ${s.side} · ${Math.abs(angOf(s.windCm, dist)).toFixed(2)} ${uLabel}${sfp ? ` (hold ${Math.abs(angOf(s.windCm, dist) * o.scale).toFixed(2)})` : ''} · dial ${dialSide} ${fmtClicks(s.wClk, t.perMark, t.perTurn)}</div>` +
       `<div class="m">${s.v.toFixed(0)} m/s · ${s.energy.toFixed(0)} J · ${s.tof.toFixed(2)} s</div></div>`;
   });
 
@@ -1224,6 +1410,8 @@ function runTargets() {
     noteEl.textContent = `No solution for target${unreachable.length > 1 ? 's' : ''} ` +
       `${unreachable.join(', ')} — distance missing or beyond this load's reach.`;
   }
+  noteEl.textContent = [noteEl.textContent, over ? TRAVEL_NOTE(t) : '',
+    sfp ? `Hold columns are reticle readings ${holdTag(o)}.` : ''].filter(Boolean).join(' ');
 }
 
 // Re-run automatically when settings affecting them change,
@@ -1259,14 +1447,20 @@ const GEAR_KINDS = {
   },
   optic: {
     title: 'Optic', plural: 'optics',
-    inputs: ['clickCm', 'clickCustom', 'clicksPerMark', 'marksPerTurn'],
-    read: () => ({ clickUnit, clickPreset, trajUnit }),
+    // Current magnification is a shooting-time setting, not part of the optic.
+    inputs: ['clickCm', 'clickCustom', 'clicksPerMark', 'clicksPerTurn', 'clicksTotal', 'oZoomMin', 'oZoomMax', 'oCalMag'],
+    read: () => ({ clickUnit, clickPreset, trajUnit, focalPlane }),
     write: d => {
       if (d.trajUnit === 'MRAD' || d.trajUnit === 'MOA') trajUnit = d.trajUnit;
+      if (d.focalPlane === 'FFP' || d.focalPlane === 'SFP') focalPlane = d.focalPlane;
       if (!restoreClick(d.clickUnit, d.clickPreset) && d.clickCm) migrateClick(d.clickCm);
+      migrateTurn(d);
       applyClick();
     },
-    suggest: () => `${clickLabel()} scope`
+    suggest: () => {
+      const z = $('oZoomMin').value && $('oZoomMax').value ? `${$('oZoomMin').value}-${$('oZoomMax').value}x ` : '';
+      return `${z}${focalPlane} ${clickLabel()}`;
+    }
   },
   load: {
     // An ammo load: bullet weight, muzzle velocity, BC (+ optional length). The name is free text
@@ -1515,17 +1709,36 @@ $('gearRows').addEventListener('click', e => {
 });
 
 /* ---------------- Wiring ---------------- */
-document.querySelectorAll('#card1 input').forEach(el => el.addEventListener('input', () => {
-  if (el.id === 'clickCustom') applyClick();
-  calc();
-  saveState();
-  if (['clickCustom', 'clicksPerMark', 'marksPerTurn'].includes(el.id)) refreshAll();
-}));
-document.querySelectorAll('#card2 input').forEach(el => el.addEventListener('input', () => {
-  saveState();
-  if (['tBc', 'tMv', 'tTemp'].includes(el.id)) updateBcHint();
-  if (el.id === 'tCaliber') syncCaliber();
-}));
+// Optic changes re-render open tables; other inputs wait for an explicit Calculate.
+const OPTIC_INPUTS = ['clickCustom', 'clicksPerMark', 'clicksPerTurn', 'clicksTotal', 'oZoomMin', 'oZoomMax', 'oCalMag', 'oMag'];
+document.querySelectorAll('section.tab input[id]').forEach(el => {
+  if (el.type === 'file' || el.type === 'hidden') return;
+  el.addEventListener('input', () => {
+    if (el.id === 'clickCustom') applyClick();
+    if (el.id === 'tCaliber') syncCaliber();
+    if (['tBc', 'tMv', 'tTemp'].includes(el.id)) updateBcHint();
+    if (OPTIC_INPUTS.includes(el.id)) syncOptic();
+    calc();
+    saveState();
+    if (OPTIC_INPUTS.includes(el.id)) refreshAll();
+  });
+});
+
+/* ---- Tabs ---- */
+const TAB_KEY = 'bc-tab';
+function showTab(name) {
+  const tabs = [...document.querySelectorAll('section.tab')];
+  if (!tabs.some(t => t.dataset.tab === name)) name = 'setup';
+  tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  try { localStorage.setItem(TAB_KEY, name); } catch (e) { /* private mode */ }
+}
+$('tabs').addEventListener('click', e => {
+  const b = e.target.closest ? e.target.closest('button[data-tab]') : null;
+  if (!b) return;
+  showTab(b.dataset.tab);
+  window.scrollTo(0, 0);
+});
 
 // Target rows are rebuilt on add/remove, so listen on the container.
 $('targetRows').addEventListener('input', e => {
@@ -1552,6 +1765,7 @@ calc();
 renderTargetRows();
 renderGear();
 updateBcHint();
+showTab(localStorage.getItem(TAB_KEY) || 'setup');
 </script>
 </body>
 </html>

@@ -148,6 +148,10 @@
   .gear-io { margin-top: 18px; max-width: 420px; }
   @media (max-width: 700px) { .gear-grid { grid-template-columns: 1fr; } }
   html { overflow-x: clip; -webkit-text-size-adjust: 100%; }
+  /* iOS Safari zooms in on a quick double tap (easy to do on toggles and Save
+     buttons) and keeps that zoom, cutting off the right edge of every card.
+     "manipulation" turns off double-tap zoom but keeps pinch-zoom and scrolling. */
+  html, body, button, input, select, label, summary, a { touch-action: manipulation; }
   .tabs {
     position: sticky; top: 0; z-index: 10; width: 100%; max-width: 900px;
     display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 16px; margin: -12px 0 0;
